@@ -52,6 +52,11 @@ With `data-scroll="true"` the element becomes a tall scroll track (`data-stages`
 scrolling up. `data-snap` adds gentle scroll-snapping to each stage. `data-screens="screen_wedding,screen_dinner,…"` picks a screen image per stage
 (files in `assets/hi|lo/`). `api.goTo(k)` scrolls to a stage; `api.stage` is the current one; `onStage(k)` fires on change.
 
+### Header
+
+`data-titles="WEDDINGS & ENGAGEMENTS|DINNERS|CELEBRATIONS|CONCEPT"` (pipe-separated, one per stage) renders a tracked uppercase
+header in Noto Serif Display Thin (`assets/fonts/`, 20 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
+
 Programmatic use:
 
 ```js

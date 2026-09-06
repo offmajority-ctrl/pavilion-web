@@ -29,6 +29,9 @@ const DEFAULTS = {
   trackHeight: null,       // e.g. '350vh' — defaults to stages * 100vh
   screens: null,           // per-stage screen texture names, e.g. ['screen_wedding', 'screen_dinner', ...]
   onStage: null,           // called with the nearest stage index when it changes
+  titles: null,            // per-stage header text, e.g. ['WEDDINGS & ENGAGEMENTS', 'DINNERS', ...]
+  titleFont: null,         // woff2 url (defaults to assets/fonts/NotoSerifDisplay-Thin.woff2)
+  titleFamily: 'Noto Serif Display Thin',
   bloom: 0.25,
   exposure: 1.0,
   maxPixelRatio: 2.0,
@@ -150,6 +153,34 @@ export function mountPavilion(container, userOpts = {}) {
   poster.alt = ''; poster.decoding = 'async'; poster.src = opts.poster || (assets + 'poster.jpg');
   Object.assign(poster.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', transition: 'opacity 900ms ease' });
   view.appendChild(poster); view.appendChild(canvas);
+
+  // ---------------------------------------------------------------- header overlay (DOM text over the canvas, crisp at any DPR)
+  let titleEl = null;
+  if (opts.titles && opts.titles.length) {
+    const fontUrl = opts.titleFont || (assets + 'fonts/NotoSerifDisplay-Thin.woff2');
+    if (!document.getElementById('pavilion-font')) {
+      const st = document.createElement('style'); st.id = 'pavilion-font';
+      st.textContent = `@font-face{font-family:'${opts.titleFamily}';src:url('${fontUrl}') format('woff2');font-weight:100;font-style:normal;font-display:swap;}`;
+      document.head.appendChild(st);
+    }
+    titleEl = document.createElement('h2');
+    Object.assign(titleEl.style, {
+      position: 'absolute', left: '50%', top: '11%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
+      fontFamily: `'${opts.titleFamily}', 'Noto Serif Display', Georgia, serif`, fontWeight: '100', fontSize: 'clamp(19px, 2.5vw, 38px)', letterSpacing: '0.32em', textIndent: '0.32em', textTransform: 'uppercase',
+      textAlign: 'center', lineHeight: '1.25', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
+      opacity: '0', transition: 'opacity 700ms ease', whiteSpace: 'normal',
+    });
+    titleEl.textContent = opts.titles[0] || '';
+    view.appendChild(titleEl);
+  }
+  let titleTimer = 0;
+  const showTitle = (k) => {
+    if (!titleEl) return;
+    const next = (opts.titles && opts.titles[k]) || '';
+    if (titleEl.textContent === next && titleEl.style.opacity === '1') return;
+    titleEl.style.opacity = '0'; clearTimeout(titleTimer);
+    titleTimer = setTimeout(() => { titleEl.textContent = next; if (next) titleEl.style.opacity = '1'; }, next === titleEl.textContent ? 0 : 450);
+  };
 
   // renderer
   let renderer;
@@ -322,7 +353,7 @@ export function mountPavilion(container, userOpts = {}) {
     const p = THREE.MathUtils.clamp(-r.top / travel, 0, 1);
     yaw.target = p * (opts.stages - 1) * Math.PI / 2;
     const k = Math.round(p * (opts.stages - 1));
-    if (k !== yaw.stage) { yaw.stage = k; opts.onStage && opts.onStage(k, api); }
+    if (k !== yaw.stage) { yaw.stage = k; showTitle(k); opts.onStage && opts.onStage(k, api); }
   };
   const onScroll = () => { readScroll(); if (state.visible && !state.running) start(); };
   if (opts.scroll) window.addEventListener('scroll', onScroll, { passive: true });
@@ -353,7 +384,7 @@ export function mountPavilion(container, userOpts = {}) {
     composer.render();
     state.frames++;
     readScroll();   // polled every frame too, so throttled or missing scroll events never stall the camera
-    if (state.frames === 2) { canvas.style.opacity = '1'; poster.style.opacity = '0'; setTimeout(() => { if (!state.disposed) poster.remove(); }, 1000); opts.onReady && opts.onReady(api); }
+    if (state.frames === 2) { canvas.style.opacity = '1'; poster.style.opacity = '0'; showTitle(yaw.stage); setTimeout(() => { if (!state.disposed) poster.remove(); }, 1000); opts.onReady && opts.onReady(api); }
     opts.onFrame && opts.onFrame(dt, state);
     raf = requestAnimationFrame(loop);
   };
@@ -374,7 +405,7 @@ export function mountPavilion(container, userOpts = {}) {
     get stage() { return yaw.stage; }, get yaw() { return { ...yaw }; },
     goTo(k) {
       k = THREE.MathUtils.clamp(k | 0, 0, opts.stages - 1);
-      if (!opts.scroll) { yaw.target = k * Math.PI / 2; yaw.stage = k; return; }
+      if (!opts.scroll) { yaw.target = k * Math.PI / 2; yaw.stage = k; showTitle(k); return; }
       const r = container.getBoundingClientRect(); const vh = window.innerHeight || 1;
       const top = window.scrollY + r.top + (r.height - vh) * (k / Math.max(1, opts.stages - 1));
       window.scrollTo({ top, behavior: 'smooth' });
@@ -384,7 +415,7 @@ export function mountPavilion(container, userOpts = {}) {
       container.removeEventListener('pointermove', onMove); container.removeEventListener('pointerleave', onLeave); window.removeEventListener('deviceorientation', onGyro);
       scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
       for (const m of Object.values(mats).flat()) { for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose(); m.dispose(); }
-      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove();
+      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove(); if (titleEl) titleEl.remove();
     },
   };
   return api;
@@ -394,7 +425,7 @@ export function mountPavilion(container, userOpts = {}) {
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-pavilion]').forEach((el) => {
     if (el.__pavilion) return;
-    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null });
+    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null, titles: el.dataset.titles ? el.dataset.titles.split('|').map((x) => x.trim()) : null, titleFont: el.dataset.titleFont || null });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }
