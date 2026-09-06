@@ -166,7 +166,7 @@ export function mountPavilion(container, userOpts = {}) {
     titleEl = document.createElement('h2');
     Object.assign(titleEl.style, {
       position: 'absolute', left: '50%', top: '11%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
-      fontFamily: `'${opts.titleFamily}', 'Noto Serif Display', Georgia, serif`, fontWeight: '100', fontSize: 'clamp(16px, 2.125vw, 32px)', letterSpacing: '0.32em', textIndent: '0.32em', textTransform: 'uppercase',
+      fontFamily: `'${opts.titleFamily}', 'Noto Serif Display', Georgia, serif`, fontWeight: '100', fontSize: 'clamp(14.5px, 1.9vw, 29px)', letterSpacing: '0.32em', textIndent: '0.32em', textTransform: 'uppercase',
       textAlign: 'center', lineHeight: '1.25', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
       opacity: '0', transition: 'opacity 700ms ease', whiteSpace: 'normal',
     });
