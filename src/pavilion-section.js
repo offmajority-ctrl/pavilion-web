@@ -352,7 +352,7 @@ export function mountPavilion(container, userOpts = {}) {
     if (objects.Floor) reflection.render(objects.Floor);
     composer.render();
     state.frames++;
-    if (state.frames === 1) readScroll();
+    readScroll();   // polled every frame too, so throttled or missing scroll events never stall the camera
     if (state.frames === 2) { canvas.style.opacity = '1'; poster.style.opacity = '0'; setTimeout(() => { if (!state.disposed) poster.remove(); }, 1000); opts.onReady && opts.onReady(api); }
     opts.onFrame && opts.onFrame(dt, state);
     raf = requestAnimationFrame(loop);
