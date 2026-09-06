@@ -1,0 +1,1 @@
+{ "name": "pavilion-web", "private": true, "type": "module", "scripts": { "build": "node build.mjs" }, "devDependencies": { "esbuild": "^0.24.2" }, "dependencies": { "three": "0.170.0" } }
