@@ -23,6 +23,12 @@ const DEFAULTS = {
   tier: 'auto',            // 'hi' | 'lo' | 'auto'
   poster: null,            // url of a still shown while loading (defaults to assets/poster.jpg)
   parallax: 1.0,           // 0 disables
+  scroll: false,           // scroll-driven camera: the container becomes a tall track with a sticky viewport
+  stages: 4,               // number of stages the camera turns through (90° apart)
+  snap: true,              // scroll-snap to each stage (scroll mode only)
+  trackHeight: null,       // e.g. '350vh' — defaults to stages * 100vh
+  screens: null,           // per-stage screen texture names, e.g. ['screen_wedding', 'screen_dinner', ...]
+  onStage: null,           // called with the nearest stage index when it changes
   bloom: 0.25,
   exposure: 1.0,
   maxPixelRatio: 2.0,
@@ -118,15 +124,32 @@ export function mountPavilion(container, userOpts = {}) {
   const assets = opts.assetsUrl.endsWith('/') ? opts.assetsUrl : opts.assetsUrl + '/';
   const state = { disposed: false, ready: false, visible: true, running: false, tier: 'hi', frames: 0, t: 0, last: performance.now() };
 
-  // DOM
+  // DOM — in scroll mode the container is the tall track and `view` is a sticky 100vh viewport inside it
   container.style.position ||= 'relative';
-  container.style.overflow = 'hidden';
+  let view = container;
+  if (opts.scroll) {
+    container.style.overflow = 'visible';
+    container.style.height = opts.trackHeight || (opts.stages * 100) + 'vh';
+    view = document.createElement('div');
+    Object.assign(view.style, { position: 'sticky', top: '0', height: '100vh', width: '100%', overflow: 'hidden' });
+    container.appendChild(view);
+    if (opts.snap) {
+      for (let k = 0; k < opts.stages; k++) {
+        const m = document.createElement('div');
+        Object.assign(m.style, { position: 'absolute', left: '0', width: '1px', height: '100vh', top: (k * 100) + 'vh', pointerEvents: 'none', scrollSnapAlign: 'start' });
+        container.insertBefore(m, view);
+      }
+      document.documentElement.style.scrollSnapType ||= 'y proximity';
+    }
+  } else {
+    container.style.overflow = 'hidden';
+  }
   const canvas = document.createElement('canvas');
   Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', opacity: '0', transition: 'opacity 900ms ease' });
   const poster = document.createElement('img');
   poster.alt = ''; poster.decoding = 'async'; poster.src = opts.poster || (assets + 'poster.jpg');
   Object.assign(poster.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', transition: 'opacity 900ms ease' });
-  container.appendChild(poster); container.appendChild(canvas);
+  view.appendChild(poster); view.appendChild(canvas);
 
   // renderer
   let renderer;
@@ -192,21 +215,28 @@ export function mountPavilion(container, userOpts = {}) {
   };
 
   const load = async () => {
-    const [gltf, tex] = await Promise.all([
+    const screenNames = Array.from({ length: opts.stages }, (_, k) => (opts.screens && opts.screens[k]) || 'screen_wedding');
+    const uniqueScreens = [...new Set(screenNames)];
+    const [gltf, gltfRest, tex, screenTex] = await Promise.all([
       new Promise((res, rej) => new GLTFLoader().load(assets + 'stage0.glb', res, undefined, rej)),
+      opts.stages > 1 ? new Promise((res, rej) => new GLTFLoader().load(assets + 'stages_rest.glb', res, undefined, rej)) : Promise.resolve(null),
       (async () => {
-        const [floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, screen] = await Promise.all([
+        const [floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad] = await Promise.all([
           loadTex('floor_irr'), loadTex('floor_alb', { srgb: true }), loadTex('floor_detail', { wrap: true }), loadTex('floor_rough', { wrap: true }), loadTex('floor_normal', { wrap: true }),
-          loadTex('wall_rad'), loadTex('ceil_rad'), loadTex('archL_rad'), loadTex('archR_rad'), loadTex('screen_wedding', { srgb: true }),
+          loadTex('wall_rad'), loadTex('ceil_rad'), loadTex('archL_rad'), loadTex('archR_rad'),
         ]);
-        return { floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, screen };
+        return { floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad };
       })(),
+      Promise.all(uniqueScreens.map((n) => loadTex(n, { srgb: true }))).then((list) => Object.fromEntries(uniqueScreens.map((n, i) => [n, list[i]]))),
     ]);
     if (state.disposed) return;
 
+
     const baked = (map) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(6) } }, vertexShader: S.bakedVert, fragmentShader: S.bakedFrag, toneMapped: true });
     mats.wall = baked(tex.wall_rad); mats.ceil = baked(tex.ceil_rad); mats.archL = baked(tex.archL_rad); mats.archR = baked(tex.archR_rad);
-    mats.screen = new THREE.ShaderMaterial({ uniforms: { map: { value: tex.screen }, intensity: { value: 1.0 * opts.exposure }, dim: { value: 0 } }, vertexShader: S.bakedVert, fragmentShader: S.screenFrag, toneMapped: true });
+    const screenMat = (map) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, intensity: { value: 1.0 * opts.exposure }, dim: { value: 0 } }, vertexShader: S.bakedVert, fragmentShader: S.screenFrag, toneMapped: true });
+    mats.screens = screenNames.map((n) => screenMat(screenTex[n]));
+    mats.screen = mats.screens[0];
     mats.floor = new THREE.ShaderMaterial({
       uniforms: {
         lightMap: { value: tex.floor_irr }, albedoMap: { value: tex.floor_alb }, detailMap: { value: tex.floor_detail }, roughMap: { value: tex.floor_rough }, normalMap: { value: tex.floor_normal },
@@ -217,22 +247,24 @@ export function mountPavilion(container, userOpts = {}) {
     mats.beamCore = beamMaterial([1.0, 0.93, 0.82], 0.16, 0.015, 7.5, 2.0, 0.45, 0.0);
     mats.beamHaze = beamMaterial([1.0, 0.88, 0.72], 0.045, 0.012, 5.0, 2.2, 0.55, 0.25);
 
-    gltf.scene.traverse((o) => {
+    const assign = (root) => root.traverse((o) => {
       if (!o.isMesh) return;
       const n = o.name.replace(/^EXP_/, '');
       objects[n] = o; o.frustumCulled = false;
+      const stageIdx = (n.match(/_(\d)(_|$)/) || [])[1];
       if (n === 'Floor') o.material = mats.floor;
       else if (n === 'RoomWall') o.material = mats.wall;
       else if (n === 'RoomCeiling') o.material = mats.ceil;
       else if (n === 'Arch_0_left') o.material = mats.archL;
       else if (n === 'Arch_0_right') o.material = mats.archR;
-      else if (n.startsWith('Screen_')) o.material = mats.screen;
-      else if (n === 'BeamCone_0') { o.material = mats.beamCore; o.renderOrder = 10; o.scale.y *= 1.3; }
-      else if (n === 'BeamHaze_0') { o.material = mats.beamHaze; o.renderOrder = 9; o.scale.y *= 1.3; }
+      else if (n.startsWith('Screen_')) { const k = Math.min(parseInt(stageIdx || '0', 10), mats.screens.length - 1); o.material = mats.screens[k]; if (k >= opts.stages) o.visible = false; }
+      else if (n.startsWith('BeamCone_')) { o.material = mats.beamCore; o.renderOrder = 10; o.scale.y *= 1.3; if (parseInt(stageIdx || '0', 10) >= opts.stages) o.visible = false; }
+      else if (n.startsWith('BeamHaze_')) { o.material = mats.beamHaze; o.renderOrder = 9; o.scale.y *= 1.3; if (parseInt(stageIdx || '0', 10) >= opts.stages) o.visible = false; }
     });
-    scene.add(gltf.scene);
+    assign(gltf.scene); scene.add(gltf.scene);
+    if (gltfRest) { assign(gltfRest.scene); scene.add(gltfRest.scene); }
     // stagger GPU uploads over a few frames so the main thread never stalls on one big upload
-    const texList = Object.values(tex);
+    const texList = [...Object.values(tex), ...Object.values(screenTex)];
     let i = 0;
     const upload = () => { if (state.disposed) return; for (let k = 0; k < 3 && i < texList.length; k++, i++) renderer.initTexture(texList[i]); if (i < texList.length) requestAnimationFrame(upload); else { state.ready = true; start(); } };
     requestAnimationFrame(upload);
@@ -241,7 +273,7 @@ export function mountPavilion(container, userOpts = {}) {
   // ---------------------------------------------------------------- sizing
   const size = { w: 1, h: 1 };
   const resize = () => {
-    const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
+    const w = Math.max(1, view.clientWidth), h = Math.max(1, view.clientHeight);
     if (w === size.w && h === size.h) return;
     size.w = w; size.h = h;
     renderer.setSize(w, h, false); composer.setSize(w, h);
@@ -253,11 +285,11 @@ export function mountPavilion(container, userOpts = {}) {
     camera.fov = THREE.MathUtils.radToDeg(vfov); camera.aspect = aspect; camera.updateProjectionMatrix();
     reflection.setSize(w * pixelRatio, h * pixelRatio);
   };
-  const ro = new ResizeObserver(resize); ro.observe(container);
+  const ro = new ResizeObserver(resize); ro.observe(view);
 
   // ---------------------------------------------------------------- parallax (cursor + gyro)
   const target = { x: 0, y: 0 }, cur = { x: 0, y: 0 };
-  const onMove = (e) => { const r = container.getBoundingClientRect(); target.x = ((e.clientX - r.left) / r.width) * 2 - 1; target.y = ((e.clientY - r.top) / r.height) * 2 - 1; };
+  const onMove = (e) => { const r = view.getBoundingClientRect(); target.x = ((e.clientX - r.left) / r.width) * 2 - 1; target.y = ((e.clientY - r.top) / r.height) * 2 - 1; };
   const onLeave = () => { target.x = 0; target.y = 0; };
   let gyroBase = null;
   const onGyro = (e) => {
@@ -280,18 +312,39 @@ export function mountPavilion(container, userOpts = {}) {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission !== 'function' && /Android|iPhone|iPad/i.test(navigator.userAgent)) enableGyro();
   }
 
+  // ---------------------------------------------------------------- scroll-driven yaw (stage k sits at yaw k * 90°)
+  const yaw = { target: 0, cur: 0, stage: 0 };
+  const readScroll = () => {
+    if (!opts.scroll) return;
+    const r = container.getBoundingClientRect();
+    const vh = window.innerHeight || 1;
+    const travel = Math.max(1, r.height - vh);
+    const p = THREE.MathUtils.clamp(-r.top / travel, 0, 1);
+    yaw.target = p * (opts.stages - 1) * Math.PI / 2;
+    const k = Math.round(p * (opts.stages - 1));
+    if (k !== yaw.stage) { yaw.stage = k; opts.onStage && opts.onStage(k, api); }
+  };
+  const onScroll = () => { readScroll(); if (state.visible && !state.running) start(); };
+  if (opts.scroll) window.addEventListener('scroll', onScroll, { passive: true });
+
   // ---------------------------------------------------------------- loop
   let raf = 0;
   const loop = () => {
     raf = 0;
     if (state.disposed || !state.running) return;
-    const now = performance.now(); const dt = Math.min(0.05, (now - state.last) / 1000); state.last = now; state.t += dt;
+    const now = performance.now(); const dtRaw = (now - state.last) / 1000; const dt = Math.min(0.05, dtRaw); state.last = now; state.t += dt;
     // damped parallax
     const k = 1 - Math.exp(-dt * 3.2);
     cur.x += (target.x - cur.x) * k; cur.y += (target.y - cur.y) * k;
     const px = cur.x * 0.45 * opts.parallax, py = -cur.y * 0.18 * opts.parallax;
-    camera.position.set(camBase.x + px, camBase.y + py, camBase.z);
-    camera.lookAt(lookBase.x + px * 0.35, lookBase.y + py * 0.35, lookBase.z);
+    // camera yaw eases toward the scroll target; parallax is applied in the camera's own frame
+    const ky = 1 - Math.exp(-Math.min(dtRaw, 0.5) * 4.5);
+    yaw.cur += (yaw.target - yaw.cur) * ky;
+    const sy = Math.sin(yaw.cur), cy = Math.cos(yaw.cur);
+    const fwd = new THREE.Vector3(sy, 0, -cy), right = new THREE.Vector3(cy, 0, sy);
+    camera.position.copy(camBase).addScaledVector(right, px); camera.position.y += py;
+    const look = camBase.clone().addScaledVector(fwd, 16.8); look.y = lookBase.y; look.addScaledVector(right, px * 0.35); look.y += py * 0.35;
+    camera.lookAt(look);
     camera.updateMatrixWorld();
     // beam life
     for (const u of uniformsTime) u.value = state.t;
@@ -299,6 +352,7 @@ export function mountPavilion(container, userOpts = {}) {
     if (objects.Floor) reflection.render(objects.Floor);
     composer.render();
     state.frames++;
+    if (state.frames === 1) readScroll();
     if (state.frames === 2) { canvas.style.opacity = '1'; poster.style.opacity = '0'; setTimeout(() => { if (!state.disposed) poster.remove(); }, 1000); opts.onReady && opts.onReady(api); }
     opts.onFrame && opts.onFrame(dt, state);
     raf = requestAnimationFrame(loop);
@@ -316,12 +370,20 @@ export function mountPavilion(container, userOpts = {}) {
 
   const api = {
     get ready() { return state.ready; }, get tier() { return state.tier; }, scene, camera, renderer, materials: mats, objects, enableGyro,
-    setScreenDim(v) { if (mats.screen) mats.screen.uniforms.dim.value = v; },
+    setScreenDim(v) { for (const m of (mats.screens || [])) m.uniforms.dim.value = v; },
+    get stage() { return yaw.stage; }, get yaw() { return { ...yaw }; },
+    goTo(k) {
+      k = THREE.MathUtils.clamp(k | 0, 0, opts.stages - 1);
+      if (!opts.scroll) { yaw.target = k * Math.PI / 2; yaw.stage = k; return; }
+      const r = container.getBoundingClientRect(); const vh = window.innerHeight || 1;
+      const top = window.scrollY + r.top + (r.height - vh) * (k / Math.max(1, opts.stages - 1));
+      window.scrollTo({ top, behavior: 'smooth' });
+    },
     dispose() {
-      state.disposed = true; stop(); ro.disconnect(); io.disconnect(); document.removeEventListener('visibilitychange', onVis);
+      state.disposed = true; stop(); ro.disconnect(); io.disconnect(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('scroll', onScroll);
       container.removeEventListener('pointermove', onMove); container.removeEventListener('pointerleave', onLeave); window.removeEventListener('deviceorientation', onGyro);
       scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
-      for (const m of Object.values(mats)) { for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose(); m.dispose(); }
+      for (const m of Object.values(mats).flat()) { for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose(); m.dispose(); }
       reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove();
     },
   };
@@ -332,7 +394,7 @@ export function mountPavilion(container, userOpts = {}) {
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-pavilion]').forEach((el) => {
     if (el.__pavilion) return;
-    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom });
+    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }

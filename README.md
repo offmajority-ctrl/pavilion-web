@@ -41,6 +41,17 @@ The section fills whatever size its container has — control layout and respons
 Optional attributes: `data-tier="hi|lo|auto"` (default auto), `data-parallax="0..2"` (default 1), `data-bloom="0..1"` (default 0.25),
 `data-poster="url"`.
 
+### Scroll-driven camera
+
+```html
+<section data-pavilion data-assets="…/assets/" data-scroll="true" data-stages="4" data-snap="true"></section>
+```
+
+With `data-scroll="true"` the element becomes a tall scroll track (`data-stages` × 100vh, or `data-track-height="350vh"`) with a sticky
+100vh viewport inside. As the page scrolls through it the camera turns smoothly from stage to stage (90° apart, eased), and turns back when
+scrolling up. `data-snap` adds gentle scroll-snapping to each stage. `data-screens="screen_wedding,screen_dinner,…"` picks a screen image per stage
+(files in `assets/hi|lo/`). `api.goTo(k)` scrolls to a stage; `api.stage` is the current one; `onStage(k)` fires on change.
+
 Programmatic use:
 
 ```js

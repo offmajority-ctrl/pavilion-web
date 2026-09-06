@@ -1,8 +1,10 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pavilion</title>
 <style>html,body{margin:0;background:#0a0806;color:#eee;font-family:system-ui}
-.pav{width:100vw;height:100vh}
+.intro,.outro{height:60vh;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.6}
 </style></head><body>
-<section id="pav" class="pav" data-pavilion data-assets="./assets/" data-tier="auto"></section>
+<div class="intro">scroll ↓</div>
+<section id="pav" data-pavilion data-assets="./assets/" data-tier="auto" data-scroll="true" data-stages="4"></section>
+<div class="outro">end</div>
 <script src="./pavilion-section.js"></script>
 </body></html>
