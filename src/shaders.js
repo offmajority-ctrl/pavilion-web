@@ -142,19 +142,22 @@ export const floorFrag = /* glsl */ `
   uniform float tileScale;        // metres per tile
   uniform float exposure;
   uniform float reflStrength;
+  uniform vec3 albedoGain;        // lifts the baked (very dark) resin albedo so the beam pools read bright and warm
+  uniform float reflBlurMix;      // 0 = mirror-sharp, 1 = fully blurred
   uniform float normalStrength;
   uniform float roughMin, roughMax;
   uniform vec4 poolOn;            // per-stage beam pool visibility (the pool is baked; this dims it while the beam is off)
   uniform float poolRadius;       // metres from the room centre to the beam pools
+  uniform vec4 legs[4];           // contact shadows under the figures' legs: x, z, radius, strength (follow the figures in flight)
   varying vec2 vUv;
   varying vec3 vWorld;
   varying vec4 vRefl;
 
   void main() {
     vec2 tuv = vWorld.xz / tileScale;
-    vec3 albedo = texture2D(albedoMap, vUv).rgb;                 // sRGB -> linear by three
+    vec3 albedo = texture2D(albedoMap, vUv).rgb * albedoGain;    // sRGB -> linear by three
     float detail = texture2D(detailMap, tuv).r * 2.0;
-    albedo *= detail;
+    albedo *= mix(1.0, detail, 0.18);   // polished resin: only a trace of the concrete grain
     vec3 light = decodeLog(texture2D(lightMap, vUv).rgb);
     // stage pools sit at azimuth k*90deg: (0,-R), (R,0), (0,R), (-R,0)
     float dim = 1.0;
@@ -164,8 +167,19 @@ export const floorFrag = /* glsl */ `
       float d = distance(vWorld.xz, c);
       float on = k == 0 ? poolOn.x : (k == 1 ? poolOn.y : (k == 2 ? poolOn.z : poolOn.w));
       dim *= mix(1.0, 0.12, (1.0 - on) * smoothstep(4.5, 1.5, d));
+      dim *= mix(1.0, 3.6, on * smoothstep(4.0, 1.2, d));          // the beam pool reads brighter than the rest of the floor
     }
-    light *= dim;
+    // dark seam where the screen meets the floor
+    float ds = 24.9 - length(vWorld.xz);
+    dim *= mix(0.18, 1.0, smoothstep(0.0, 2.2, ds));
+    // deep, soft contact shadows under the legs (darkest at the footprint, fading out over the radius)
+    float occ = 1.0;
+    for (int i = 0; i < 4; i++) {
+      float d = distance(vWorld.xz, legs[i].xy);
+      float f = 1.0 - smoothstep(legs[i].z * 0.35, max(legs[i].z, 0.01), d);
+      occ *= 1.0 - legs[i].w * f * f * (3.0 - 2.0 * f);
+    }
+    light *= dim * occ;
     vec3 diffuse = albedo * light;
 
     // perturbed normal for the reflection lookup + fresnel
@@ -176,13 +190,13 @@ export const floorFrag = /* glsl */ `
     float rough = mix(roughMin, roughMax, texture2D(roughMap, tuv).r);
 
     // Schlick with F0 = 0.04 plus the clear-coat feel of the resin: reflections grow toward grazing angles
-    float F = 0.09 + 0.91 * pow(1.0 - ndv, 5.0);
+    float F = 0.005 + 0.995 * pow(1.0 - ndv, 12.0);   // steeper than Schlick: the resin only really mirrors at grazing angles (matches the reference floor)
     vec2 duv = (vRefl.xy / vRefl.w) + N.xz * 0.012;
     vec3 rs = texture2D(reflSharp, duv).rgb;
     vec3 rb = texture2D(reflBlur, duv).rgb;
-    vec3 refl = mix(rs, rb, 0.85);
+    vec3 refl = mix(rs, rb, reflBlurMix);
     // rougher surface -> dimmer, broader highlight (energy roughly conserved by the blur)
-    vec3 spec = refl * F * reflStrength * (1.0 - 0.35 * rough) * mix(1.0, detail, 0.4);
+    vec3 spec = refl * F * reflStrength * (1.0 - 0.35 * rough) * mix(1.0, detail, 0.4) * mix(0.35, 1.0, occ);
 
     vec3 hdr = (diffuse + spec) * exposure;
     gl_FragColor = vec4(hdr, 1.0);

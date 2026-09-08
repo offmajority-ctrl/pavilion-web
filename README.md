@@ -50,7 +50,7 @@ Optional attributes: `data-tier="hi|lo|auto"` (default auto), `data-parallax="0.
 With `data-scroll="true"` the element becomes a tall scroll track (`data-stages` × 100vh, or `data-track-height="350vh"`) with a sticky
 100vh viewport inside. As the page scrolls through it the camera turns smoothly from stage to stage (90° apart, eased), and turns back when
 scrolling up. `data-snap` snaps the scroll to stages (`true` = mandatory, the page never rests between scenes; `proximity` = gentle; `false` = off). `data-screens="screen_wedding,screen_dinner,…"` picks a screen image per stage
-(files in `assets/hi|lo/`). `api.goTo(k)` scrolls to a stage; `api.stage` is the current one; `onStage(k)` fires on change.
+(files in `assets/hi|lo/`; the default `screen_white` is the plain warm-white panel of the dark-studio look). `api.goTo(k)` scrolls to a stage; `api.stage` is the current one; `onStage(k)` fires on change.
 
 ### Header
 
@@ -119,6 +119,15 @@ pav.dispose();
 - Texture uploads are staggered across frames so the page never stalls.
 - If WebGL is unavailable or the context is lost, the poster stays in place.
 - Colour: AgX tone mapping + a small grade tuned against the Blender render.
+
+### Dark-studio look (v2)
+
+The room is lit like a black-box studio: no fill, near-black plaster, the warm-white screen as the main bounce source, one beam per stage,
+faint edge glows behind the screen and a soft front key on the figure. `tools/relight.py` applies that lighting to `pavilion_v2.blend` (parameters at
+the top of the file), renders a preview from the stage camera, and bakes every map (`python3 relight.py bake floor archL archR archC wall ceil floor_alb`);
+`tools/convert_bakes.py` writes the hi/lo WebPs. The floor bake includes both figures and the contact-shadow decals as shadow-only casters, so the
+shadows under the legs and the seam under the screen are real Cycles shadows; a soft tracked shadow follows the figure while it is carried
+between stages.
 
 ## Regenerating
 

@@ -39,7 +39,7 @@ const DEFAULTS = {
   figureButton: 'VIEW',    // label of the detach button (null hides it)
   figureBack: 'BACK',
   onDetach: null, onAttach: null,       // start over-exposed and pushed-out; call api.enter() (the hero does this) to dolly into the room
-  bloom: 0.25,
+  bloom: 0.1,
   exposure: 1.0,
   maxPixelRatio: 2.0,
   onReady: null,
@@ -57,7 +57,7 @@ export function pavilionAssetList(el) {
   const tier = (el.dataset.tier && el.dataset.tier !== 'auto') ? el.dataset.tier : detectTierStandalone();
   const t = tier === 'hi' ? 'hi/' : 'lo/';
   const stages = el.dataset.stages ? parseInt(el.dataset.stages, 10) : 4;
-  const screens = [...new Set((el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : []).concat(['screen_wedding']))];
+  const screens = [...new Set((el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : []).concat(['screen_white']))];
   const tex = ['floor_irr', 'floor_alb', 'floor_detail', 'floor_rough', 'floor_normal', 'wall_rad', 'ceil_rad', 'archL_rad', 'archR_rad', 'archL_studio', 'archR_studio', ...(stages > 1 ? ['archC_rad', 'archC_studio'] : []), ...screens];
   const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb', 'corp_arch.glb'] : []), 'poster.jpg', 'fonts/PerpetuaTitlingMT-Light.woff2', ...tex.map((n) => t + n + '.webp')];
   return { base, files };
@@ -256,7 +256,7 @@ export function mountPavilion(container, userOpts = {}) {
 
   // scene + camera (matches Cam_0_Wedding: (0, 2.75, 0) looking at the stage 16.8 m away, 0.86° up)
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 120);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 120); camera.layers.enable(2);
   const camBase = new THREE.Vector3(0, 2.75, 0);
   const lookBase = new THREE.Vector3(0, 3.0, -16.8);
   camera.position.copy(camBase); camera.lookAt(lookBase);
@@ -264,7 +264,7 @@ export function mountPavilion(container, userOpts = {}) {
   // post
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), opts.bloom, 0.55, 0.9);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), opts.bloom, 0.55, 2.0);
   bloom.resolution.set(hi ? 512 : 256, hi ? 512 : 256);
   composer.addPass(bloom);
   // overlay: white-out plane + detached figure, drawn after bloom so neither blooms and the white stays clean
@@ -276,9 +276,9 @@ export function mountPavilion(container, userOpts = {}) {
   composer.addPass(new OutputPass());
   // display-space grade that brings three's AgX in line with Blender's AgX (measured against the Cycles render)
   const grade = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, gain: { value: 0.94 }, sat: { value: 1.15 } },
+    uniforms: { tDiffuse: { value: null }, gain: { value: 0.94 }, sat: { value: 1.15 }, tint: { value: new THREE.Vector3(1.0, 0.965, 0.92) } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'uniform sampler2D tDiffuse; uniform float gain, sat; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); float y = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); float g = mix(gain, 1.0, smoothstep(0.85, 1.0, y)); gl_FragColor = vec4(clamp(g * y + sat * (c.rgb - y), 0.0, 1.0), 1.0); }',
+    fragmentShader: 'uniform sampler2D tDiffuse; uniform float gain, sat; uniform vec3 tint; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); float y = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); float g = mix(gain, 1.0, smoothstep(0.85, 1.0, y)); gl_FragColor = vec4(clamp((g * y + sat * (c.rgb - y)) * tint, 0.0, 1.0), 1.0); }',
   });
   composer.addPass(grade);
 
@@ -302,6 +302,13 @@ export function mountPavilion(container, userOpts = {}) {
   const figures = {};
   const beamMats = {};
   let whitePlane = null, whiteMat = null, shadow = null;
+  // deep, soft contact shadow under a figure's two legs; widens and thins as the figure rises, crossfades with the object
+  const setShadow = (f, x, z, rot, lift, fade) => {
+    if (!mats.floor || f.legSlot == null) return; const L = mats.floor.uniforms.legs.value; const h = lift / 1.7;
+    const d = f.halfW - 0.75, cx = Math.cos(rot), sx = -Math.sin(rot);
+    const r = 1.9 * (1 + 0.9 * h), str = fade * 0.95 * (1 - 0.7 * h);
+    L[f.legSlot].set(x + cx * d, z + sx * d, r, str); L[f.legSlot + 1].set(x - cx * d, z - sx * d, r, str);
+  };
   const uniformsTime = [];
 
   const beamMaterial = (color, aTop, aBot, fadeH, edgePow, edgeBlend, noiseAmt) => {
@@ -313,7 +320,7 @@ export function mountPavilion(container, userOpts = {}) {
   };
 
   const load = async () => {
-    const screenNames = Array.from({ length: opts.stages }, (_, k) => (opts.screens && opts.screens[k]) || 'screen_wedding');
+    const screenNames = Array.from({ length: opts.stages }, (_, k) => (opts.screens && opts.screens[k]) || 'screen_white');
     const uniqueScreens = [...new Set(screenNames)];
     const [gltf, gltfRest, gltfCorp, tex, screenTex] = await Promise.all([
       new Promise((res, rej) => new GLTFLoader().load(R(assets + 'stage0.glb'), res, undefined, rej)),
@@ -334,19 +341,21 @@ export function mountPavilion(container, userOpts = {}) {
 
     const baked = (map, map2, figure = false) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, map2: { value: map2 || map }, mixAmt: { value: 0 }, fade: { value: 1 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(6) } }, vertexShader: S.bakedVert, fragmentShader: S.bakedFrag, toneMapped: true, transparent: figure, depthWrite: true });
     mats.wall = baked(tex.wall_rad); mats.ceil = baked(tex.ceil_rad); mats.archL = baked(tex.archL_rad, tex.archL_studio, true); mats.archR = baked(tex.archR_rad, tex.archR_studio, true);
+    mats.wall.uniforms.exposure.value = 0.35 * opts.exposure; mats.ceil.uniforms.exposure.value = 0.35 * opts.exposure;   // black-box walls: keep the baked gradients just perceptible
+    for (const m of [mats.archL, mats.archR, mats.archC]) if (m) m.uniforms.exposure.value = 1.35 * opts.exposure;
     if (tex.archC_rad) mats.archC = baked(tex.archC_rad, tex.archC_studio, true);
-    const screenMat = (map) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, intensity: { value: 1.0 * opts.exposure }, dim: { value: 0 } }, vertexShader: S.bakedVert, fragmentShader: S.screenFrag, toneMapped: true });
+    const screenMat = (map) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, intensity: { value: 2.4 * opts.exposure }, dim: { value: 0 } }, vertexShader: S.bakedVert, fragmentShader: S.screenFrag, toneMapped: true });
     mats.screens = screenNames.map((n) => screenMat(screenTex[n]));
     mats.screen = mats.screens[0];
     mats.floor = new THREE.ShaderMaterial({
       uniforms: {
         lightMap: { value: tex.floor_irr }, albedoMap: { value: tex.floor_alb }, detailMap: { value: tex.floor_detail }, roughMap: { value: tex.floor_rough }, normalMap: { value: tex.floor_normal },
         reflSharp: { value: reflection.rt.texture }, reflBlur: { value: reflection.rtBlurB.texture }, reflMatrix: { value: reflection.textureMatrix },
-        tileScale: { value: 3.5 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(24) }, poolOn: { value: new THREE.Vector4(1, 1, 1, 1) }, poolRadius: { value: 16.8 }, reflStrength: { value: 0.8 }, normalStrength: { value: 0.5 }, roughMin: { value: 0.22 }, roughMax: { value: 0.36 },
+        tileScale: { value: 3.5 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(24) }, poolOn: { value: new THREE.Vector4(1, 1, 1, 1) }, poolRadius: { value: 16.8 }, reflStrength: { value: 0.35 }, reflBlurMix: { value: 0.6 }, albedoGain: { value: new THREE.Vector3(1.5, 1.38, 1.25) }, legs: { value: [new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0)] }, normalStrength: { value: 0.5 }, roughMin: { value: 0.22 }, roughMax: { value: 0.36 },
       }, vertexShader: S.floorVert, fragmentShader: S.floorFrag, toneMapped: true,
     });
-    mats.beamCore = beamMaterial([1.0, 0.93, 0.82], 0.16, 0.015, 7.5, 2.0, 0.45, 0.0);
-    mats.beamHaze = beamMaterial([1.0, 0.88, 0.72], 0.045, 0.012, 5.0, 2.2, 0.55, 0.25);
+    mats.beamCore = beamMaterial([1.0, 0.93, 0.82], 1.0, 0.0, 9.0, 3.4, 0.45, 0.0);
+    mats.beamHaze = beamMaterial([1.0, 0.88, 0.72], 0.16, 0.006, 8.0, 3.0, 0.55, 0.25);
 
     const assign = (root) => root.traverse((o) => {
       if (!o.isMesh) return;
@@ -363,6 +372,7 @@ export function mountPavilion(container, userOpts = {}) {
         const k = parseInt(stageIdx || '0', 10); const core = n.startsWith('BeamCone_');
         if (!beamMats[k]) { beamMats[k] = { core: mats.beamCore.clone(), haze: mats.beamHaze.clone(), on: 1 }; uniformsTime.push(beamMats[k].core.uniforms.time, beamMats[k].haze.uniforms.time); }
         o.material = core ? beamMats[k].core : beamMats[k].haze; o.renderOrder = core ? 10 : 9; o.scale.y *= 1.3; if (k >= opts.stages) o.visible = false;
+        o.layers.set(2);   // main camera only: seen from under the floor the cones would haze the whole reflection
       }
     });
     assign(gltf.scene); scene.add(gltf.scene);
@@ -381,6 +391,21 @@ export function mountPavilion(container, userOpts = {}) {
       pivot.add(gltfCorp.scene); pivot.position.set(16.8, 2.54, 0); pivot.rotation.y = -Math.PI / 2; scene.add(pivot);   // fronts face the room centre: rot = -yaw of the stage
       figures[1] = { pivot, home: pivot.position.clone(), homeRot: -Math.PI / 2, mats: [mats.archC], height: 5.08, halfW: 3.5, meshes };
     }
+    // edge glows: the strip fixtures behind the screen's outer edges read as two warm spots at floor level (the bakes carry only a trace of them)
+    {
+      const gc = document.createElement('canvas'); gc.width = gc.height = 128; const gg = gc.getContext('2d');
+      const gr = gg.createRadialGradient(64, 64, 2, 64, 64, 64); gr.addColorStop(0, 'rgba(255,214,170,1)'); gr.addColorStop(0.25, 'rgba(255,200,150,0.55)'); gr.addColorStop(0.6, 'rgba(255,190,140,0.14)'); gr.addColorStop(1, 'rgba(255,190,140,0)');
+      gg.fillStyle = gr; gg.fillRect(0, 0, 128, 128);
+      const gt = new THREE.CanvasTexture(gc); gt.colorSpace = THREE.SRGBColorSpace;
+      const gm = new THREE.SpriteMaterial({ map: gt, color: new THREE.Color(0.8, 0.8, 0.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, toneMapped: true });
+      for (let k = 0; k < opts.stages; k++) {
+        const a = k * Math.PI / 2, R = 25.0;   // screen radius
+        for (const sgn of [-1, 1]) {
+          const sp = new THREE.Sprite(gm); const x = sgn * 12.3, zz = -(R + 0.5);
+          sp.position.set(Math.cos(a) * x + Math.sin(a) * zz, 0.1, -Math.sin(a) * x - Math.cos(a) * zz); sp.scale.set(3.8, 0.9, 1); sp.renderOrder = 6; scene.add(sp);
+        }
+      }
+    }
     // white-out plane riding with the camera + soft shadow for the detached figure
     whiteMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(10, 10, 10), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: true });
     whitePlane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), whiteMat); whitePlane.frustumCulled = false; whitePlane.renderOrder = -10; whitePlane.visible = false;
@@ -392,6 +417,8 @@ export function mountPavilion(container, userOpts = {}) {
     const shTex = new THREE.CanvasTexture(sc); shTex.colorSpace = THREE.SRGBColorSpace;
     shadow = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 4.6), new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false, toneMapped: false }));
     shadow.rotation.x = -Math.PI / 2; shadow.renderOrder = -5; shadow.visible = false; overlayScene.add(shadow);
+    // contact shadows under the figures' legs live in the floor shader (uniform `legs`): figure k owns lobes 2k and 2k+1
+    figures[0] && (figures[0].legSlot = 0); figures[1] && (figures[1].legSlot = 2);
     // stagger GPU uploads over a few frames so the main thread never stalls on one big upload
     const texList = [...Object.values(tex), ...Object.values(screenTex)];
     let i = 0;
@@ -407,9 +434,9 @@ export function mountPavilion(container, userOpts = {}) {
     size.w = w; size.h = h;
     renderer.setSize(w, h, false); composer.setSize(w, h);
     const aspect = w / h;
-    // keep the composition: horizontal FOV 77° on wide screens, tightening to 51° on portrait
+    // keep the composition: horizontal FOV 68° on wide screens, tightening to 48° on portrait
     const t = THREE.MathUtils.clamp((aspect - 0.6) / (1.6 - 0.6), 0, 1);
-    const hfov = THREE.MathUtils.lerp(51, 77, t);
+    const hfov = THREE.MathUtils.lerp(48, 68, t);
     const vfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hfov / 2)) / aspect);
     state.baseFov = THREE.MathUtils.radToDeg(vfov); camera.fov = state.baseFov; camera.aspect = aspect; camera.updateProjectionMatrix();
     reflection.setSize(w * pixelRatio, h * pixelRatio);
@@ -507,6 +534,7 @@ export function mountPavilion(container, userOpts = {}) {
         if (transit && (f === A || f === B)) continue;
         f.pivot.position.copy(f.home); f.pivot.rotation.set(0, f.homeRot, 0); f.pivot.scale.setScalar(1); f.pivot.visible = true;
         for (const m of f.mats) { m.uniforms.fade.value = 1; m.uniforms.mixAmt.value = 0; }
+        setShadow(f, f.home.x, f.home.z, f.homeRot, 0, 1);
       }
       if (transit) {
         const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;        // in-out cubic: the turn accelerates through the middle
@@ -522,6 +550,8 @@ export function mountPavilion(container, userOpts = {}) {
           f.pivot.position.copy(pos); f.pivot.rotation.set(0, rot, 0); f.pivot.scale.setScalar(breath); f.pivot.visible = fade > 0.002;
           for (const m of f.mats) { m.uniforms.fade.value = fade; m.uniforms.mixAmt.value = lift2; }
         }
+        // the contact shadows travel with the carrier, crossfading with their objects
+        setShadow(A, pos.x, pos.z, rot, lift, 1 - fB); setShadow(B, pos.x, pos.z, rot, lift, fB);
       }
     }
     // detach / attach flight of the stage figure
@@ -549,6 +579,7 @@ export function mountPavilion(container, userOpts = {}) {
         if (!detach.dragging) { detach.dragV *= Math.pow(0.02, Math.min(dtRaw, 0.1)); detach.drag += detach.dragV; }
         fig.pivot.rotation.y = -yaw.cur + ease * Math.PI * 2 + detach.drag * k;
         for (const m of fig.mats) m.uniforms.mixAmt.value = THREE.MathUtils.smoothstep(k, 0.3, 0.85);
+        setShadow(fig, fig.home.x, fig.home.z, fig.homeRot, 0, 1 - k);   // the contact shadow lets go as the figure lifts off
         shadow.visible = k > 0.5; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
         shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = THREE.MathUtils.smoothstep(k, 0.55, 1.0) * 0.9;
         const dark = k > 0.5;

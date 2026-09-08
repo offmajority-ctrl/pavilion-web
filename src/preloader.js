@@ -89,7 +89,7 @@ export function heroOptsFrom(el) {
 export function pavilionOptsFrom(el) {
   return {
     assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null,
-    parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : 0.25,
+    parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : 0.1,
     scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : 4, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null,
     screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null, titles: el.dataset.titles ? el.dataset.titles.split('|').map((x) => x.trim()) : null,
     titleFont: el.dataset.titleFont || null, awaitEnter: el.dataset.awaitEnter === 'true',
