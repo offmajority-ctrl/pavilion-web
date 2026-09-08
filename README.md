@@ -85,9 +85,11 @@ Re-cut: `ffmpeg -i vieNEW.mp4 -t 6.5 -c:v libx264 -crf 19 -pix_fmt yuv420p -movf
 ### Figure detach (VIEW button)
 
 A small VIEW button sits at the bottom of the pavilion viewport whenever the current stage has a figure (stage 0: the olive arch).
-Clicking it locks scrolling and, over 2.6 s, fades the room to white while the figure lifts off, drifts toward the camera and turns a full
-360°, landing centred on the white page with a soft drop shadow; its baked room lighting crossfades to a neutral studio bake
-(`archL_studio` / `archR_studio`, baked in Blender with a white world). On white the visitor can drag to turn it; BACK reverses the flight.
+Clicking it locks scrolling and, over 2.8 s, a white page slides down from the top of the viewport (soft-edged sheet, in-out quint) while the
+figure lifts off, drifts toward the camera and turns a full 360°, landing centred on the page with a drop shadow that grows in with the sheet's
+coverage under it. The figure keeps its stage lighting until the sheet passes behind it, then eases 85% of the way to a neutral studio bake
+(`archL_studio` / `archR_studio`, baked in Blender with a white world) so it still reads as the same object; the header and button go dark as
+the sheet reaches them. BACK plays it in reverse (the sheet rises). On white the visitor can drag to turn it; BACK reverses the flight.
 `data-figure-button` / `data-figure-back` set the labels (empty `data-figure-button` hides it); `api.detach()`, `api.attach()`, `api.detached`,
 `onDetach` / `onAttach` hooks. Landing-page content for the white state can be layered over the section (it is plain DOM above the canvas).
 

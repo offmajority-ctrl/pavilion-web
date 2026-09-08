@@ -198,7 +198,7 @@ export function mountPavilion(container, userOpts = {}) {
       position: 'absolute', left: '50%', top: '11%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
       fontFamily: `'${opts.titleFamily}', 'Perpetua Titling MT', 'Perpetua', Georgia, serif`, fontWeight: '300', fontSize: 'clamp(14.5px, 1.9vw, 29px)', letterSpacing: '0.2em', textIndent: '0.2em', textTransform: 'uppercase',
       textAlign: 'center', lineHeight: '1.25', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
-      opacity: '0', transition: 'opacity 700ms ease', whiteSpace: 'normal',
+      opacity: '0', transition: 'opacity 700ms ease, color 450ms ease', whiteSpace: 'normal',
     });
     titleEl.textContent = opts.titles[0] || '';
     view.appendChild(titleEl);
@@ -208,7 +208,7 @@ export function mountPavilion(container, userOpts = {}) {
   if (opts.figureButton) {
     if (!document.getElementById('pavilion-figbtn-style')) {
       const st = document.createElement('style'); st.id = 'pavilion-figbtn-style';
-      st.textContent = `.pav-figbtn{position:absolute;left:50%;bottom:6.5%;transform:translateX(-50%);background:none;border:0;padding:12px 18px;cursor:pointer;font-family:'${opts.titleFamily}','Perpetua Titling MT','Perpetua',Georgia,serif;font-weight:300;font-size:clamp(12px,1.05vw,15px);letter-spacing:.3em;text-indent:.3em;text-transform:uppercase;color:rgba(255,241,228,.9);opacity:0;pointer-events:none;transition:opacity 600ms ease,color 900ms ease;-webkit-tap-highlight-color:transparent}
+      st.textContent = `.pav-figbtn{position:absolute;left:50%;bottom:6.5%;transform:translateX(-50%);background:none;border:0;padding:12px 18px;cursor:pointer;font-family:'${opts.titleFamily}','Perpetua Titling MT','Perpetua',Georgia,serif;font-weight:300;font-size:clamp(12px,1.05vw,15px);letter-spacing:.3em;text-indent:.3em;text-transform:uppercase;color:rgba(255,241,228,.9);opacity:0;pointer-events:none;transition:opacity 600ms ease,color 450ms ease;-webkit-tap-highlight-color:transparent}
       .pav-figbtn span{display:block;padding-bottom:6px;border-bottom:1px solid currentColor;transition:letter-spacing 500ms ease}
       .pav-figbtn.on{opacity:.9;pointer-events:auto}.pav-figbtn:hover span{letter-spacing:.38em}.pav-figbtn.dark{color:rgba(64,48,36,.9)}.pav-figbtn:focus-visible{outline:none}`;
       document.head.appendChild(st);
@@ -217,7 +217,7 @@ export function mountPavilion(container, userOpts = {}) {
     view.appendChild(figBtn);
     figBtn.addEventListener('click', () => { if (detach.state === 'in') api.attach(); else if (detach.state === 'out') api.detach(); });
   }
-  const detach = { state: 'out', t: 0, dur: 2.6, k: 0, dir: 1, drag: 0, dragV: 0, dragging: false, lastX: 0 };
+  const detach = { state: 'out', t: 0, dur: 2.8, k: 0, dir: 1, drag: 0, dragV: 0, dragging: false, lastX: 0, mix: 0 };
   const updateFigBtn = () => {
     if (!figBtn) return;
     const seg = yaw.cur / (Math.PI / 2); const atHome = Math.abs(seg - Math.round(seg)) < 0.03;
@@ -407,9 +407,16 @@ export function mountPavilion(container, userOpts = {}) {
       }
     }
     // white-out plane riding with the camera + soft shadow for the detached figure
-    whiteMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(10, 10, 10), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: true });
+    whiteMat = new THREE.ShaderMaterial({
+      uniforms: { wipe: { value: 0 }, soft: { value: 0.07 } }, transparent: true, depthTest: false, depthWrite: false,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      // the sheet's lower edge sits at 1 - wipe*(1+soft) in viewport space; a soft feather so it reads as a sheet of light, not a hard shutter
+      fragmentShader: 'uniform float wipe, soft; varying vec2 vUv; void main(){ float e = 1.0 - wipe * (1.0 + soft); float a = smoothstep(e, e + soft, vUv.y); gl_FragColor = vec4(10.0, 10.0, 10.0, a); }',
+    });
+    // coverage of the sheet at a viewport height y (0 bottom .. 1 top) — used to hand objects and text over as the edge passes them
+    whiteMat.coverAt = (y) => { const w = whiteMat.uniforms.wipe.value, sft = whiteMat.uniforms.soft.value; const e = 1 - w * (1 + sft); return THREE.MathUtils.smoothstep(y, e, e + sft); };
     whitePlane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), whiteMat); whitePlane.frustumCulled = false; whitePlane.renderOrder = -10; whitePlane.visible = false;
-    whitePlane.onBeforeRender = (r, sc, cam) => { const d = 0.6; const h = 2 * d * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * 1.05; whitePlane.scale.set(h * cam.aspect, h, 1); };
+    whitePlane.onBeforeRender = (r, sc, cam) => { const d = 0.6; const h = d * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * 1.01; whitePlane.scale.set(h * cam.aspect, h, 1); };   // plane is 2 units: scale = half-height -> exactly the viewport (+1%)
     whitePlane.position.set(0, 0, -0.6); camera.add(whitePlane); whiteScene.add(camera);
     const sc = document.createElement('canvas'); sc.width = sc.height = 256; const g = sc.getContext('2d');
     const grad = g.createRadialGradient(128, 128, 10, 128, 128, 128); grad.addColorStop(0, 'rgba(40,28,20,0.93)'); grad.addColorStop(0.3, 'rgba(40,28,20,0.86)'); grad.addColorStop(0.6, 'rgba(40,28,20,0.62)'); grad.addColorStop(1, 'rgba(40,28,20,0)');   // alpha is high because it blends against HDR white (10) before AgX
@@ -561,12 +568,15 @@ export function mountPavilion(container, userOpts = {}) {
         if (detach.state === 'to-in' || detach.state === 'to-out') {
           detach.t += Math.min(dtRaw, 0.1); const u = Math.min(1, detach.t / detach.dur);
           detach.k = detach.state === 'to-in' ? u : 1 - u;
+          if (detach.lock != null) { detach.k = detach.lock; detach.t = 0; }
           if (u >= 1) { detach.state = detach.state === 'to-in' ? 'in' : 'out'; if (detach.state === 'out') { scene.attach(fig.pivot); fig.pivot.position.copy(fig.home); fig.pivot.rotation.set(0, fig.homeRot, 0); fig.pivot.scale.setScalar(1); shadow.visible = false; whitePlane.visible = false; detach.drag = 0; detach.dragV = 0; opts.onAttach && opts.onAttach(api); } else { opts.onDetach && opts.onDetach(api); } updateFigBtn(); }
         }
         const k = detach.k;
-        const ease = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;          // in-out cubic
-        const white = THREE.MathUtils.smoothstep(k, 0.12, 0.72);
-        whiteMat.opacity = white; whitePlane.visible = white > 0.001;
+        const ease = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;          // in-out cubic (flight)
+        // the white page slides down from the top (in-out quint, 0.06 .. 0.78 of the flight) and back up on the way out
+        const wt = THREE.MathUtils.clamp((k - 0.06) / 0.72, 0, 1);
+        const wipe = wt < 0.5 ? 16 * Math.pow(wt, 5) : 1 - Math.pow(-2 * wt + 2, 5) / 2;
+        whiteMat.uniforms.wipe.value = detach.wipeLock != null ? detach.wipeLock : wipe; whitePlane.visible = whiteMat.uniforms.wipe.value > 0.0005;
         const full = k >= 0.999;
         composer.passes[0].enabled = !full; bloom.enabled = !full; whitePass.clear = full;
         // landing pose: in front of the camera, a touch below eye level so we look slightly down onto it
@@ -578,13 +588,21 @@ export function mountPavilion(container, userOpts = {}) {
         fig.pivot.position.y += Math.sin(Math.PI * k) * 1.2;                                  // small lift on the way
         if (!detach.dragging) { detach.dragV *= Math.pow(0.02, Math.min(dtRaw, 0.1)); detach.drag += detach.dragV; }
         fig.pivot.rotation.y = -yaw.cur + ease * Math.PI * 2 + detach.drag * k;
-        for (const m of fig.mats) m.uniforms.mixAmt.value = THREE.MathUtils.smoothstep(k, 0.3, 0.85);
-        setShadow(fig, fig.home.x, fig.home.z, fig.homeRot, 0, 1 - k);   // the contact shadow lets go as the figure lifts off
-        shadow.visible = k > 0.5; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
-        shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = THREE.MathUtils.smoothstep(k, 0.55, 1.0) * 0.9;
-        const dark = k > 0.5;
-        if (titleEl) titleEl.style.color = dark ? 'rgba(64, 48, 36, 0.92)' : 'rgba(255, 241, 228, 0.94)';
-        if (figBtn) figBtn.classList.toggle('dark', dark);
+        // the figure keeps its stage lighting until the sheet passes behind it, then eases toward the studio bake (never fully:
+        // it keeps a trace of the warm top light so it still feels like the same object on white)
+        const ndc = fig.pivot.position.clone().project(camera); const figY = THREE.MathUtils.clamp((ndc.y + 1) / 2, 0, 1);
+        const cover = whiteMat.coverAt(figY);
+        detach.mix += (cover * 0.85 - detach.mix) * (1 - Math.exp(-Math.min(dtRaw, 0.1) * 3.5));
+        for (const m of fig.mats) m.uniforms.mixAmt.value = detach.mix;
+        setShadow(fig, fig.home.x, fig.home.z, fig.homeRot, 0, 1 - THREE.MathUtils.smoothstep(k, 0.0, 0.35));   // the contact shadow lets go as the figure lifts off
+        // drop shadow on the page: grows in with the sheet's coverage under the figure, no pop
+        const shY = THREE.MathUtils.clamp((fig.pivot.position.clone().setY(fig.pivot.position.y - fig.height * sc / 2).project(camera).y + 1) / 2, 0, 1);
+        const shA = whiteMat.coverAt(shY) * THREE.MathUtils.smoothstep(k, 0.25, 0.9);
+        shadow.visible = shA > 0.005; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
+        shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = shA * 0.9;
+        // text goes dark as the sheet passes it (title near the top, button near the bottom)
+        if (titleEl) titleEl.style.color = whiteMat.coverAt(0.88) > 0.5 ? 'rgba(64, 48, 36, 0.92)' : 'rgba(255, 241, 228, 0.94)';
+        if (figBtn) figBtn.classList.toggle('dark', whiteMat.coverAt(0.08) > 0.5);
         if (detach.state === 'to-in' && k > 0.05 && fig.pivot.parent !== overlayScene) overlayScene.attach(fig.pivot);
       }
     }
@@ -612,7 +630,7 @@ export function mountPavilion(container, userOpts = {}) {
     get ready() { return state.ready; }, get tier() { return state.tier; }, scene, camera, renderer, materials: mats, objects, enableGyro,
     setScreenDim(v) { for (const m of (mats.screens || [])) m.uniforms.dim.value = v; },
     get stage() { return yaw.stage; }, get yaw() { return { ...yaw }; },
-    get detached() { return detach.state === 'in'; }, 
+    get detached() { return detach.state === 'in'; }, _detachK(k) { detach.lock = k; }, _wipe(w) { detach.wipeLock = w; }, 
     detach() {
       if (detach.state !== 'out' || !figures[yaw.stage] || !state.ready) return false;
       detach.state = 'to-in'; detach.stage = yaw.stage; detach.t = 0; detach.k = 0; detach.drag = 0; detach.dragV = 0;
