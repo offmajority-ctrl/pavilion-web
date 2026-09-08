@@ -34,8 +34,8 @@ export async function runPreloader({ heroEl, pavEl, mountPavilion, pavilionAsset
   for (const u of urls) { totals[u] = sizeOf(u); total += totals[u]; }
   const loaded = {};
   let shown = 0, target = 0;
-  const tick = () => { if (shown < target) { shown = Math.min(target, shown + Math.max(1, Math.round((target - shown) * 0.25))); num.textContent = String(shown); } if (shown < 100) requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
+  // timer-driven (not rAF) so the counter keeps moving even when the tab is in the background
+  const tickId = setInterval(() => { if (shown < target) { shown = Math.min(target, shown + Math.max(1, Math.round((target - shown) * 0.25))); num.textContent = String(shown); } if (shown >= 100) clearInterval(tickId); }, 50);
   const report = () => {
     const done = Object.values(loaded).reduce((a, b) => a + b, 0);
     const t = total || 1;
@@ -65,7 +65,10 @@ export async function runPreloader({ heroEl, pavEl, mountPavilion, pavilionAsset
     pav = await new Promise((resolve) => {
       const api = mountPavilion(pavEl, { ...pavilionOptsFrom(pavEl), urlMap, onReady: () => resolve(api) });
       pavEl.__pavilion = api;
-      setTimeout(() => resolve(api), 20000);   // never trap the visitor if WebGL is unavailable
+      // GPU warm-up needs frames; a background tab gets none, so don't hold the curtain there (or if WebGL is unavailable)
+      const bail = () => setTimeout(() => resolve(api), 1500);
+      if (document.hidden) bail(); else document.addEventListener('visibilitychange', () => { if (document.hidden) bail(); }, { once: true });
+      setTimeout(() => resolve(api), 20000);
     });
   }
   target = 100; shown = 99; num.textContent = '100';
