@@ -195,12 +195,12 @@ export function mountPavilion(container, userOpts = {}) {
     }
     titleEl = document.createElement('h2');
     Object.assign(titleEl.style, {
-      position: 'absolute', left: '50%', top: '11%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
-      fontFamily: `'${opts.titleFamily}', 'Perpetua Titling MT', 'Perpetua', Georgia, serif`, fontWeight: '300', fontSize: 'clamp(14.5px, 1.9vw, 29px)', letterSpacing: '0.2em', textIndent: '0.2em', textTransform: 'uppercase',
-      textAlign: 'center', lineHeight: '1.25', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
-      opacity: '0', transition: 'opacity 700ms ease, color 450ms ease', whiteSpace: 'normal',
+      position: 'absolute', left: '50%', top: '6.5%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
+      fontFamily: `'${opts.titleFamily}', 'Perpetua Titling MT', 'Perpetua', Georgia, serif`, fontWeight: '300', fontSize: 'clamp(20px, 2.7vw, 42px)', letterSpacing: '0.16em', textIndent: '0.16em', textTransform: 'uppercase',
+      textAlign: 'center', lineHeight: '1.18', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
+      opacity: '0', transition: 'opacity 700ms ease, color 450ms ease, font-size 900ms cubic-bezier(.2,.7,.2,1), letter-spacing 900ms ease, top 900ms cubic-bezier(.2,.7,.2,1)', whiteSpace: 'normal',
     });
-    titleEl.textContent = opts.titles[0] || '';
+    titleEl.dataset.raw = opts.titles[0] || '';
     view.appendChild(titleEl);
   }
   // ---------------------------------------------------------------- figure button (detach / back)
@@ -232,12 +232,23 @@ export function mountPavilion(container, userOpts = {}) {
   const onDragUp = () => { detach.dragging = false; };
   view.addEventListener('pointerdown', onDragDown); window.addEventListener('pointermove', onDragMove, { passive: true }); window.addEventListener('pointerup', onDragUp); window.addEventListener('pointercancel', onDragUp);
   let titleTimer = 0;
+  // page mode (white): larger, on two lines; room mode: one tracked line
+  let titlePage = false;
+  const titleHtml = (t) => { const i = t.indexOf('&'); const cut = i > 0 ? i + 1 : (t.lastIndexOf(' ', t.length / 2 + 2) || -1); return cut > 0 ? t.slice(0, cut).trim() + '<br>' + t.slice(cut).trim() : t; };
+  if (titleEl) titleEl.innerHTML = titleHtml(titleEl.dataset.raw || '');
+  const setTitlePage = (on) => {
+    if (on === titlePage) return; titlePage = on;
+    Object.assign(titleEl.style, on
+      ? { color: 'rgba(64, 48, 36, 0.92)', fontSize: 'clamp(26px, 3.8vw, 60px)', letterSpacing: '0.14em', textIndent: '0.14em', top: '8%', lineHeight: '1.18' }
+      : { color: 'rgba(255, 241, 228, 0.94)', fontSize: 'clamp(20px, 2.7vw, 42px)', letterSpacing: '0.16em', textIndent: '0.16em', top: '6.5%', lineHeight: '1.18' });
+    titleEl.innerHTML = titleHtml(titleEl.dataset.raw || '');
+  };
   const showTitle = (k) => {
     if (!titleEl) return;
     const next = (opts.titles && opts.titles[k]) || '';
-    if (titleEl.textContent === next && titleEl.style.opacity === '1') return;
+    if (titleEl.dataset.raw === next && titleEl.style.opacity === '1') return;
     titleEl.style.opacity = '0'; clearTimeout(titleTimer);
-    titleTimer = setTimeout(() => { titleEl.textContent = next; if (next) titleEl.style.opacity = '1'; }, next === titleEl.textContent ? 0 : 450);
+    titleTimer = setTimeout(() => { titleEl.dataset.raw = next; titleEl.innerHTML = titleHtml(next); if (next) titleEl.style.opacity = '1'; }, next === titleEl.dataset.raw ? 0 : 450);
   };
 
   // renderer
@@ -499,7 +510,8 @@ export function mountPavilion(container, userOpts = {}) {
     // damped parallax
     const k = 1 - Math.exp(-dt * 3.2);
     cur.x += (target.x - cur.x) * k; cur.y += (target.y - cur.y) * k;
-    const px = cur.x * 0.45 * opts.parallax, py = -cur.y * 0.18 * opts.parallax;
+    const pk = detach.state === 'out' ? 1 : 1 - THREE.MathUtils.smoothstep(detach.k, 0.0, 0.5);   // the page doesn't drift with the cursor
+    const px = cur.x * 0.45 * opts.parallax * pk, py = -cur.y * 0.18 * opts.parallax * pk;
     // camera yaw eases toward the scroll target; parallax is applied in the camera's own frame
     const ky = 1 - Math.exp(-Math.min(dtRaw, 0.5) * 4.5);
     yaw.cur += (yaw.target - yaw.cur) * ky;
@@ -522,7 +534,7 @@ export function mountPavilion(container, userOpts = {}) {
       if (veil) { const kv = Math.min(1, k / 0.6); veil.style.opacity = String(1 - kv * kv); if (k >= 1) { veil.remove(); veil = null; } }
       const fov = state.baseFov * THREE.MathUtils.lerp(1.16, 1.0, kFov);
       if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; camera.updateProjectionMatrix(); }
-      if (titleEl && k < 0.7) titleEl.style.opacity = '0'; else if (titleEl && k >= 0.7 && titleEl.textContent) titleEl.style.opacity = '1';
+      if (titleEl && k < 0.7) titleEl.style.opacity = '0'; else if (titleEl && k >= 0.7 && titleEl.dataset.raw) titleEl.style.opacity = '1';
     } else if (renderer.toneMappingExposure !== 1.0 && !state.enter) { renderer.toneMappingExposure = 1.0; if (camera.fov !== state.baseFov) { camera.fov = state.baseFov; camera.updateProjectionMatrix(); } }
     // scroll carries the figure to the next stage and transforms it on the way (edge-on hand-off at 3/4 of a full turn)
     if (detach.state === 'out') {
@@ -594,14 +606,13 @@ export function mountPavilion(container, userOpts = {}) {
         const cover = whiteMat.coverAt(figY);
         detach.mix += (cover * 0.85 - detach.mix) * (1 - Math.exp(-Math.min(dtRaw, 0.1) * 3.5));
         for (const m of fig.mats) m.uniforms.mixAmt.value = detach.mix;
-        setShadow(fig, fig.home.x, fig.home.z, fig.homeRot, 0, 1 - THREE.MathUtils.smoothstep(k, 0.0, 0.35));   // the contact shadow lets go as the figure lifts off
-        // drop shadow on the page: grows in with the sheet's coverage under the figure, no pop
-        const shY = THREE.MathUtils.clamp((fig.pivot.position.clone().setY(fig.pivot.position.y - fig.height * sc / 2).project(camera).y + 1) / 2, 0, 1);
-        const shA = whiteMat.coverAt(shY) * THREE.MathUtils.smoothstep(k, 0.25, 0.9);
-        shadow.visible = shA > 0.005; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
-        shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = shA * 0.9;
+        // the contact shadow only exists while the figure is actually on (or settling onto) its spot: it fades with the
+        // figure's distance from home — lift and drift — so it neither lingers on lift-off nor snaps back before landing
+        const away = Math.hypot(fig.pivot.position.x - fig.home.x, fig.pivot.position.z - fig.home.z) + Math.max(0, fig.pivot.position.y - fig.home.y);
+        setShadow(fig, fig.home.x, fig.home.z, fig.homeRot, 0, 1 - THREE.MathUtils.smoothstep(away, 0.05, 1.7));
+        shadow.visible = false;   // no drop shadow on the page
         // text goes dark as the sheet passes it (title near the top, button near the bottom)
-        if (titleEl) titleEl.style.color = whiteMat.coverAt(0.88) > 0.5 ? 'rgba(64, 48, 36, 0.92)' : 'rgba(255, 241, 228, 0.94)';
+        if (titleEl) setTitlePage(whiteMat.coverAt(0.88) > 0.5);
         if (figBtn) figBtn.classList.toggle('dark', whiteMat.coverAt(0.08) > 0.5);
         if (detach.state === 'to-in' && k > 0.05 && fig.pivot.parent !== overlayScene) overlayScene.attach(fig.pivot);
       }

@@ -55,7 +55,8 @@ scrolling up. `data-snap` snaps the scroll to stages (`true` = mandatory, the pa
 ### Header
 
 `data-titles="WEDDINGS & ENGAGEMENTS|DINNERS|CELEBRATIONS|CONCEPT"` (pipe-separated, one per stage) renders a tracked uppercase
-header in Perpetua Titling MT Light (`assets/fonts/`, 14 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
+header in Perpetua Titling MT Light (`assets/fonts/`, 14 KB woff2) over the viewport, broken onto two lines after the `&`; it crossfades when the
+stage changes and grows a step larger (and goes dark) on the white VIEW page. `data-title-font` overrides the font URL.
 
 ### Preloader (0–100)
 
@@ -86,8 +87,9 @@ Re-cut: `ffmpeg -i vieNEW.mp4 -t 6.5 -c:v libx264 -crf 19 -pix_fmt yuv420p -movf
 
 A small VIEW button sits at the bottom of the pavilion viewport whenever the current stage has a figure (stage 0: the olive arch).
 Clicking it locks scrolling and, over 2.8 s, a white page slides down from the top of the viewport (soft-edged sheet, in-out quint) while the
-figure lifts off, drifts toward the camera and turns a full 360°, landing centred on the page with a drop shadow that grows in with the sheet's
-coverage under it. The figure keeps its stage lighting until the sheet passes behind it, then eases 85% of the way to a neutral studio bake
+figure lifts off, drifts toward the camera and turns a full 360°, landing centred on the page. There is no shadow on the page; the contact
+shadow on the stage fades with the figure's distance from its spot (lift + drift), so it lets go as the figure leaves and eases back in over the
+last second of the return rather than popping. Cursor parallax is off on the page. The figure keeps its stage lighting until the sheet passes behind it, then eases 85% of the way to a neutral studio bake
 (`archL_studio` / `archR_studio`, baked in Blender with a white world) so it still reads as the same object; the header and button go dark as
 the sheet reaches them. BACK plays it in reverse (the sheet rises). On white the visitor can drag to turn it; BACK reverses the flight.
 `data-figure-button` / `data-figure-back` set the labels (empty `data-figure-button` hides it); `api.detach()`, `api.attach()`, `api.detached`,
