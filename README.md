@@ -74,6 +74,15 @@ Re-cut: `ffmpeg -i vieNEW.mp4 -t 6.5 -c:v libx264 -crf 19 -pix_fmt yuv420p -movf
 `ffmpeg -ss 6.5 -i vieNEW.mp4 …outro_1080.mp4` (accurate seek by re-encoding), `-vf scale=1280:720` for the 720 tier,
 `-c:v libvpx-vp9 -crf 30 -b:v 0` for WebM, `-ss 0 -frames:v 1 poster.jpg` for the poster.
 
+### Figure detach (VIEW button)
+
+A small VIEW button sits at the bottom of the pavilion viewport whenever the current stage has a figure (stage 0: the olive arch).
+Clicking it locks scrolling and, over 2.6 s, fades the room to white while the figure lifts off, drifts toward the camera and turns a full
+360°, landing centred on the white page with a soft drop shadow; its baked room lighting crossfades to a neutral studio bake
+(`archL_studio` / `archR_studio`, baked in Blender with a white world). On white the visitor can drag to turn it; BACK reverses the flight.
+`data-figure-button` / `data-figure-back` set the labels (empty `data-figure-button` hides it); `api.detach()`, `api.attach()`, `api.detached`,
+`onDetach` / `onAttach` hooks. Landing-page content for the white state can be layered over the section (it is plain DOM above the canvas).
+
 Programmatic use:
 
 ```js

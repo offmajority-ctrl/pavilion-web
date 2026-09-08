@@ -28,11 +28,15 @@ export const bakedFrag = /* glsl */ `
   #include <common>
   ${decodeChunk}
   uniform sampler2D map;
+  uniform sampler2D map2;     // alternate lighting (studio) for detached figures
+  uniform float mixAmt;
   uniform float exposure;
   varying vec2 vUv;
   varying vec3 vWorld;
   void main() {
-    vec3 hdr = decodeLog(texture2D(map, vUv).rgb) * exposure;
+    vec3 hdr = decodeLog(texture2D(map, vUv).rgb);
+    if (mixAmt > 0.0) hdr = mix(hdr, decodeLog(texture2D(map2, vUv).rgb), mixAmt);
+    hdr *= exposure;
     gl_FragColor = vec4(hdr, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
