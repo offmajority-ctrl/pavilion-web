@@ -57,6 +57,21 @@ scrolling up. `data-snap` adds gentle scroll-snapping to each stage. `data-scree
 `data-titles="WEDDINGS & ENGAGEMENTS|DINNERS|CELEBRATIONS|CONCEPT"` (pipe-separated, one per stage) renders a tracked uppercase
 header in Noto Serif Display Thin (`assets/fonts/`, 20 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
 
+### Hero video (landing)
+
+```html
+<section data-hero-video data-assets="…/assets/video/" data-cta="ENTER" data-next="#pavilion" style="height:100vh"></section>
+```
+
+The 10 s film is split with ffmpeg at exactly 6.5 s (frame 156 of 241) into `intro` and `outro` clips (H.264 MP4 + VP9 WebM, 1080p and 720p
+tiers, no audio). The intro autoplays muted, holds on its last frame and fades in the CTA; the outro is already buffered and plays on click, then
+the page scrolls smoothly to `data-next`. Autoplay-blocked browsers hold on the poster with the same CTA; reduced-motion users get the hold frame
+straight away. `api.continue()`, `api.phase` (`loading|intro|hold|outro|done|blocked`), `onHold/onContinue/onDone` hooks.
+
+Re-cut: `ffmpeg -i vieNEW.mp4 -t 6.5 -c:v libx264 -crf 19 -pix_fmt yuv420p -movflags +faststart -an intro_1080.mp4` and
+`ffmpeg -ss 6.5 -i vieNEW.mp4 …outro_1080.mp4` (accurate seek by re-encoding), `-vf scale=1280:720` for the 720 tier,
+`-c:v libvpx-vp9 -crf 30 -b:v 0` for WebM, `-ss 0 -frames:v 1 poster.jpg` for the poster.
+
 Programmatic use:
 
 ```js

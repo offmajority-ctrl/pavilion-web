@@ -17,6 +17,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import * as S from './shaders.js';
+import { mountHero } from './hero-video.js';
+export { mountHero };
 
 const DEFAULTS = {
   assetsUrl: './assets/',
