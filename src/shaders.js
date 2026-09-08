@@ -144,6 +144,8 @@ export const floorFrag = /* glsl */ `
   uniform float reflStrength;
   uniform float normalStrength;
   uniform float roughMin, roughMax;
+  uniform vec4 poolOn;            // per-stage beam pool visibility (the pool is baked; this dims it while the beam is off)
+  uniform float poolRadius;       // metres from the room centre to the beam pools
   varying vec2 vUv;
   varying vec3 vWorld;
   varying vec4 vRefl;
@@ -154,6 +156,16 @@ export const floorFrag = /* glsl */ `
     float detail = texture2D(detailMap, tuv).r * 2.0;
     albedo *= detail;
     vec3 light = decodeLog(texture2D(lightMap, vUv).rgb);
+    // stage pools sit at azimuth k*90deg: (0,-R), (R,0), (0,R), (-R,0)
+    float dim = 1.0;
+    for (int k = 0; k < 4; k++) {
+      float a = float(k) * 1.5707963;
+      vec2 c = vec2(sin(a), -cos(a)) * poolRadius;
+      float d = distance(vWorld.xz, c);
+      float on = k == 0 ? poolOn.x : (k == 1 ? poolOn.y : (k == 2 ? poolOn.z : poolOn.w));
+      dim *= mix(1.0, 0.12, (1.0 - on) * smoothstep(4.5, 1.5, d));
+    }
+    light *= dim;
     vec3 diffuse = albedo * light;
 
     // perturbed normal for the reflection lookup + fresnel

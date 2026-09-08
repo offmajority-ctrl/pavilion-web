@@ -165,7 +165,7 @@ export function mountPavilion(container, userOpts = {}) {
         Object.assign(m.style, { position: 'absolute', left: '0', width: '1px', height: '100vh', top: (k * 100) + 'vh', pointerEvents: 'none', scrollSnapAlign: 'start' });
         container.insertBefore(m, view);
       }
-      document.documentElement.style.scrollSnapType ||= 'y proximity';
+      document.documentElement.style.scrollSnapType = opts.snap === 'proximity' ? 'y proximity' : 'y mandatory';   // never rest between scenes
     }
   } else {
     container.style.overflow = 'hidden';
@@ -300,6 +300,7 @@ export function mountPavilion(container, userOpts = {}) {
   const objects = {};
   const mats = {};
   const figures = {};
+  const beamMats = {};
   let whitePlane = null, whiteMat = null, shadow = null;
   const uniformsTime = [];
 
@@ -341,7 +342,7 @@ export function mountPavilion(container, userOpts = {}) {
       uniforms: {
         lightMap: { value: tex.floor_irr }, albedoMap: { value: tex.floor_alb }, detailMap: { value: tex.floor_detail }, roughMap: { value: tex.floor_rough }, normalMap: { value: tex.floor_normal },
         reflSharp: { value: reflection.rt.texture }, reflBlur: { value: reflection.rtBlurB.texture }, reflMatrix: { value: reflection.textureMatrix },
-        tileScale: { value: 3.5 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(24) }, reflStrength: { value: 0.8 }, normalStrength: { value: 0.5 }, roughMin: { value: 0.22 }, roughMax: { value: 0.36 },
+        tileScale: { value: 3.5 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(24) }, poolOn: { value: new THREE.Vector4(1, 1, 1, 1) }, poolRadius: { value: 16.8 }, reflStrength: { value: 0.8 }, normalStrength: { value: 0.5 }, roughMin: { value: 0.22 }, roughMax: { value: 0.36 },
       }, vertexShader: S.floorVert, fragmentShader: S.floorFrag, toneMapped: true,
     });
     mats.beamCore = beamMaterial([1.0, 0.93, 0.82], 0.16, 0.015, 7.5, 2.0, 0.45, 0.0);
@@ -358,8 +359,11 @@ export function mountPavilion(container, userOpts = {}) {
       else if (n === 'Arch_0_left') o.material = mats.archL;
       else if (n === 'Arch_0_right') o.material = mats.archR;
       else if (n.startsWith('Screen_')) { const k = Math.min(parseInt(stageIdx || '0', 10), mats.screens.length - 1); o.material = mats.screens[k]; if (k >= opts.stages) o.visible = false; }
-      else if (n.startsWith('BeamCone_')) { o.material = mats.beamCore; o.renderOrder = 10; o.scale.y *= 1.3; if (parseInt(stageIdx || '0', 10) >= opts.stages) o.visible = false; }
-      else if (n.startsWith('BeamHaze_')) { o.material = mats.beamHaze; o.renderOrder = 9; o.scale.y *= 1.3; if (parseInt(stageIdx || '0', 10) >= opts.stages) o.visible = false; }
+      else if (n.startsWith('BeamCone_') || n.startsWith('BeamHaze_')) {
+        const k = parseInt(stageIdx || '0', 10); const core = n.startsWith('BeamCone_');
+        if (!beamMats[k]) { beamMats[k] = { core: mats.beamCore.clone(), haze: mats.beamHaze.clone(), on: 1 }; uniformsTime.push(beamMats[k].core.uniforms.time, beamMats[k].haze.uniforms.time); }
+        o.material = core ? beamMats[k].core : beamMats[k].haze; o.renderOrder = core ? 10 : 9; o.scale.y *= 1.3; if (k >= opts.stages) o.visible = false;
+      }
     });
     assign(gltf.scene); scene.add(gltf.scene);
     if (gltfRest) { assign(gltfRest.scene); scene.add(gltfRest.scene); }
@@ -473,7 +477,7 @@ export function mountPavilion(container, userOpts = {}) {
     camera.updateMatrixWorld();
     // beam life
     for (const u of uniformsTime) u.value = state.t;
-    if (mats.beamCore) { mats.beamCore.uniforms.boost.value = 1 + Math.sin(state.t * 0.9) * 0.03; mats.beamHaze.uniforms.boost.value = 1 + Math.sin(state.t * 0.6 + 1) * 0.04; }
+    for (const k in beamMats) { const b = beamMats[k]; b.core.uniforms.boost.value = b.on * (1 + Math.sin(state.t * 0.9) * 0.03); b.haze.uniforms.boost.value = b.on * (1 + Math.sin(state.t * 0.6 + 1) * 0.04); }
     // entrance: from a white, slightly pushed-out view into the room (driven by the hero film's white-out)
     if (state.enter) {
       const e = state.enter;
@@ -491,6 +495,13 @@ export function mountPavilion(container, userOpts = {}) {
       const seg = yaw.cur / (Math.PI / 2); const a = Math.floor(seg + 1e-4); const p = THREE.MathUtils.clamp(seg - a, 0, 1);
       const A = figures[a], B = figures[a + 1];
       const transit = A && B && p > 1e-3 && p < 1 - 1e-3;
+      // the beam over a stage belongs to its figure: it goes out as the figure lifts and comes on once it has landed
+      for (const k in beamMats) {
+        const ki = +k; let on = 1;
+        if (A && B) { if (ki === a) on = 1 - THREE.MathUtils.smoothstep(p, 0.0, 0.14); else if (ki === a + 1) on = THREE.MathUtils.smoothstep(p, 0.86, 1.0); }
+        const b = beamMats[k]; b.on += (on - b.on) * (1 - Math.exp(-Math.min(dtRaw, 0.1) * 6));
+        if (mats.floor) mats.floor.uniforms.poolOn.value.setComponent(ki, b.on);
+      }
       for (const k in figures) {
         const f = figures[k];
         if (transit && (f === A || f === B)) continue;

@@ -49,7 +49,7 @@ Optional attributes: `data-tier="hi|lo|auto"` (default auto), `data-parallax="0.
 
 With `data-scroll="true"` the element becomes a tall scroll track (`data-stages` × 100vh, or `data-track-height="350vh"`) with a sticky
 100vh viewport inside. As the page scrolls through it the camera turns smoothly from stage to stage (90° apart, eased), and turns back when
-scrolling up. `data-snap` adds gentle scroll-snapping to each stage. `data-screens="screen_wedding,screen_dinner,…"` picks a screen image per stage
+scrolling up. `data-snap` snaps the scroll to stages (`true` = mandatory, the page never rests between scenes; `proximity` = gentle; `false` = off). `data-screens="screen_wedding,screen_dinner,…"` picks a screen image per stage
 (files in `assets/hi|lo/`). `api.goTo(k)` scrolls to a stage; `api.stage` is the current one; `onStage(k)` fires on change.
 
 ### Header
@@ -99,7 +99,8 @@ exactly: as the yaw goes from stage 1 to 2 the figure lifts (up to +1.7 m), floa
 at mid-way) and makes one full turn with an in-out-cubic spin. At 3/4 of the turn — edge-on, the thinnest silhouette — the olive arch crossfades
 into the corporate arch over a narrow window (spin 0.68–0.82) with a 7% scale "breath", so it reads as one object transforming; the corporate arch
 completes the turn and settles front-facing at stage 2. A little studio light is mixed in during the float so it never goes dull between the beams.
-Both figures are lit by their own room bakes when at home, and both get the VIEW/BACK detach. Chaining to stages 3 and 4 only needs their
+The beam over a stage belongs to its figure: it fades out as the figure lifts (first 14% of the turn) and fades in once it has landed
+(last 14%), and the baked floor pool dims with it (`poolOn` uniform in the floor shader). Both figures are lit by their own room bakes when at home, and both get the VIEW/BACK detach. Chaining to stages 3 and 4 only needs their
 objects baked the same way (`figures[k]` with `home`, `homeRot = -k·90°`, room + studio maps).
 
 Programmatic use:
