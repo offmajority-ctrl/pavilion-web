@@ -17,14 +17,30 @@ const DEFAULTS = {
   fadeMs: 1400,
   lead: 1.0,                // seconds before the outro ends at which the dissolve into the next section starts (overlaps the white-out)
   onHold: null, onContinue: null, onDone: null,
+  urlMap: null,             // { url: blobUrl } from the preloader
+  autoplay: true,           // false: wait for api.start() (the preloader lifts its curtain first)
 };
+
+export function heroTier(tier = 'auto') {
+  const hi = tier === 'hi' || (tier === 'auto' && Math.max(window.innerWidth, window.innerHeight) * Math.min(window.devicePixelRatio || 1, 2) >= 1900 && !/Android|iPhone|iPod/i.test(navigator.userAgent));
+  return hi ? '1080' : '720';
+}
+export function heroFormat() {
+  try { const v = document.createElement('video'); return v.canPlayType('video/mp4; codecs="avc1.640028"') ? 'mp4' : (v.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4'); } catch (e) { return 'mp4'; }
+}
+/** Files the hero needs for this device (relative to its assets folder). */
+export function heroAssetList(el) {
+  const base = (el.dataset.assets || './assets/video/').replace(/\/?$/, '/');
+  const q = heroTier(el.dataset.tier || 'auto'), f = heroFormat();
+  return { base, files: [`intro_${q}.${f}`, `outro_${q}.${f}`, 'poster.jpg'] };
+}
 
 export function mountHero(container, userOpts = {}) {
   const opts = { ...DEFAULTS, ...userOpts };
   const assets = opts.assetsUrl.endsWith('/') ? opts.assetsUrl : opts.assetsUrl + '/';
+  const R = (u) => (opts.urlMap && opts.urlMap[u]) || u;
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const hi = opts.tier === 'hi' || (opts.tier === 'auto' && Math.max(window.innerWidth, window.innerHeight) * Math.min(window.devicePixelRatio || 1, 2) >= 1900 && !/Android|iPhone|iPod/i.test(navigator.userAgent));
-  const q = hi ? '1080' : '720';
+  const q = heroTier(opts.tier);
   const state = { phase: 'loading', disposed: false };
 
   const overlay = opts.mode === 'overlay';
@@ -34,13 +50,14 @@ export function mountHero(container, userOpts = {}) {
   } else container.style.position ||= 'relative';
   container.style.overflow = 'hidden';
   container.style.backgroundColor ||= '#ebe3d8';
-  container.style.backgroundImage = `url('${assets}poster.jpg')`;
+  container.style.backgroundImage = `url('${R(assets + 'poster.jpg')}')`;
   container.style.backgroundSize = 'cover'; container.style.backgroundPosition = 'center';
 
   const mkVideo = (name) => {
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.preload = 'auto'; v.disablePictureInPicture = true;
-    for (const [ext, type] of [['mp4', 'video/mp4'], ['webm', 'video/webm']]) { const src = document.createElement('source'); src.src = `${assets}${name}_${q}.${ext}`; src.type = type; v.appendChild(src); }
+    const fmts = opts.urlMap ? [[heroFormat(), heroFormat() === 'mp4' ? 'video/mp4' : 'video/webm']] : [['mp4', 'video/mp4'], ['webm', 'video/webm']];
+    for (const [ext, type] of fmts) { const src = document.createElement('source'); src.src = R(`${assets}${name}_${q}.${ext}`); src.type = type; v.appendChild(src); }
     Object.assign(v.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: '0', transition: 'opacity 500ms ease', pointerEvents: 'none' });
     container.appendChild(v); return v;
   };
@@ -116,7 +133,9 @@ export function mountHero(container, userOpts = {}) {
   cta.addEventListener('click', continueVideo);
 
   // preload the outro as soon as the intro is playing; start when enough of the intro is buffered
-  intro.addEventListener('canplay', () => { if (state.phase === 'loading' && !reduced) playIntro(); }, { once: true });
+  let armed = opts.autoplay, canPlay = false;
+  const startWhenReady = () => { if (armed && canPlay && state.phase === 'loading' && !reduced) playIntro(); };
+  intro.addEventListener('canplay', () => { canPlay = true; startWhenReady(); }, { once: true });
   intro.load(); outro.load();
   if (reduced) { intro.addEventListener('loadeddata', () => { try { intro.currentTime = Math.max(0, intro.duration - 0.05); intro.style.opacity = '1'; } catch (e) {} showCta(); }, { once: true }); }
 
@@ -125,7 +144,7 @@ export function mountHero(container, userOpts = {}) {
   io.observe(container);
 
   const api = {
-    get phase() { return state.phase; }, intro, outro, continue: continueVideo,
+    get phase() { return state.phase; }, intro, outro, continue: continueVideo, start() { armed = true; startWhenReady(); },
     dispose() { state.disposed = true; io.disconnect(); intro.pause(); outro.pause(); intro.innerHTML = ''; outro.innerHTML = ''; intro.load(); outro.load(); intro.remove(); outro.remove(); cta.remove(); },
   };
   return api;
@@ -133,7 +152,7 @@ export function mountHero(container, userOpts = {}) {
 
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-hero-video]').forEach((el) => {
-    if (el.__hero) return;
+    if (el.__hero || el.dataset.preload !== undefined) return;
     el.__hero = mountHero(el, { assetsUrl: el.dataset.assets || './assets/video/', cta: el.dataset.cta || DEFAULTS.cta, next: el.dataset.next || null, tier: el.dataset.tier || 'auto', font: el.dataset.font || null, mode: el.dataset.mode || 'overlay', lead: el.dataset.lead != null ? parseFloat(el.dataset.lead) : DEFAULTS.lead });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();

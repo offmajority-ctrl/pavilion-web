@@ -57,6 +57,14 @@ scrolling up. `data-snap` adds gentle scroll-snapping to each stage. `data-scree
 `data-titles="WEDDINGS & ENGAGEMENTS|DINNERS|CELEBRATIONS|CONCEPT"` (pipe-separated, one per stage) renders a tracked uppercase
 header in Noto Serif Display Thin (`assets/fonts/`, 20 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
 
+### Preloader (0–100)
+
+Add `data-preload="true"` to the hero section (or the pavilion section when there is no hero). A full-screen counter then fetches every byte
+the page needs for this device — the two film clips in the right size/format, the geometry, all textures and the font, sizes read from
+`assets/manifest.json` (written by the build) so the number is byte-accurate — holds everything in memory, mounts the pavilion and waits for
+its first frames to render (shaders compiled, textures on the GPU), then lifts the curtain and starts the film. Nothing loads or compiles
+after that, so there are no stalls when entering the room or turning between stages. `data-preload-label="vie"` adds a small caption under the number.
+
 ### Hero video (landing)
 
 ```html

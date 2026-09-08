@@ -17,8 +17,9 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import * as S from './shaders.js';
-import { mountHero } from './hero-video.js';
-export { mountHero };
+import { mountHero, heroAssetList } from './hero-video.js';
+import { runPreloader, pavilionOptsFrom } from './preloader.js';
+export { mountHero, heroAssetList, runPreloader };
 
 const DEFAULTS = {
   assetsUrl: './assets/',
@@ -43,9 +44,24 @@ const DEFAULTS = {
   maxPixelRatio: 2.0,
   onReady: null,
   onFrame: null,
+  urlMap: null,            // { url: blobUrl } from the preloader
 };
 
 // ------------------------------------------------------------------ device tier
+export function detectTierStandalone() {
+  try { const c = document.createElement('canvas'); const gl = c.getContext('webgl2') || c.getContext('webgl'); if (!gl) return 'lo'; const t = detectTier({ getContext: () => gl }); const ext = gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); return t; } catch (e) { return 'lo'; }
+}
+/** Files the pavilion needs for this device (relative to its assets folder). */
+export function pavilionAssetList(el) {
+  const base = (el.dataset.assets || './assets/').replace(/\/?$/, '/');
+  const tier = (el.dataset.tier && el.dataset.tier !== 'auto') ? el.dataset.tier : detectTierStandalone();
+  const t = tier === 'hi' ? 'hi/' : 'lo/';
+  const stages = el.dataset.stages ? parseInt(el.dataset.stages, 10) : 4;
+  const screens = [...new Set((el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : []).concat(['screen_wedding']))];
+  const tex = ['floor_irr', 'floor_alb', 'floor_detail', 'floor_rough', 'floor_normal', 'wall_rad', 'ceil_rad', 'archL_rad', 'archR_rad', 'archL_studio', 'archR_studio', ...screens];
+  const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb'] : []), 'poster.jpg', 'fonts/NotoSerifDisplay-Thin.woff2', ...tex.map((n) => t + n + '.webp')];
+  return { base, files };
+}
 export function detectTier(renderer) {
   try {
     const ua = navigator.userAgent || '';
@@ -131,6 +147,7 @@ class FloorReflection {
 export function mountPavilion(container, userOpts = {}) {
   const opts = { ...DEFAULTS, ...userOpts };
   const assets = opts.assetsUrl.endsWith('/') ? opts.assetsUrl : opts.assetsUrl + '/';
+  const R = (u) => (opts.urlMap && opts.urlMap[u]) || u;
   const state = { disposed: false, ready: false, visible: true, running: false, tier: 'hi', frames: 0, t: 0, last: performance.now(), baseFov: 48, enter: opts.awaitEnter ? { t: 0, dur: 0, active: false } : null };
 
   // DOM — in scroll mode the container is the tall track and `view` is a sticky 100vh viewport inside it
@@ -156,7 +173,7 @@ export function mountPavilion(container, userOpts = {}) {
   const canvas = document.createElement('canvas');
   Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', opacity: '0', transition: 'opacity 900ms ease' });
   const poster = document.createElement('img');
-  poster.alt = ''; poster.decoding = 'async'; poster.src = opts.poster || (assets + 'poster.jpg');
+  poster.alt = ''; poster.decoding = 'async'; poster.src = R(opts.poster || (assets + 'poster.jpg'));
   Object.assign(poster.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', transition: 'opacity 900ms ease' });
   view.appendChild(poster); view.appendChild(canvas);
   // warm-white veil for the entrance: the film ends in white, the room starts under white and clears as the camera settles
@@ -170,7 +187,7 @@ export function mountPavilion(container, userOpts = {}) {
   // ---------------------------------------------------------------- header overlay (DOM text over the canvas, crisp at any DPR)
   let titleEl = null;
   if (opts.titles && opts.titles.length) {
-    const fontUrl = opts.titleFont || (assets + 'fonts/NotoSerifDisplay-Thin.woff2');
+    const fontUrl = R(opts.titleFont || (assets + 'fonts/NotoSerifDisplay-Thin.woff2'));
     if (!document.getElementById('pavilion-font')) {
       const st = document.createElement('style'); st.id = 'pavilion-font';
       st.textContent = `@font-face{font-family:'${opts.titleFamily}';src:url('${fontUrl}') format('woff2');font-weight:100;font-style:normal;font-display:swap;}`;
@@ -209,10 +226,10 @@ export function mountPavilion(container, userOpts = {}) {
     figBtn.firstChild.textContent = detach.state === 'in' ? opts.figureBack : opts.figureButton;
   };
   // drag to turn the detached figure
-  const onDragDown = (e) => { if (detach.state !== 'in') return; detach.dragging = true; detach.lastX = e.clientX; view.setPointerCapture && view.setPointerCapture(e.pointerId); };
+  const onDragDown = (e) => { if (detach.state !== 'in' || (e.target && e.target.closest && e.target.closest('button, a'))) return; detach.dragging = true; detach.lastX = e.clientX; };
   const onDragMove = (e) => { if (!detach.dragging) return; const dx = e.clientX - detach.lastX; detach.lastX = e.clientX; detach.dragV = dx * 0.006; detach.drag += detach.dragV; };
   const onDragUp = () => { detach.dragging = false; };
-  view.addEventListener('pointerdown', onDragDown); view.addEventListener('pointermove', onDragMove); view.addEventListener('pointerup', onDragUp); view.addEventListener('pointercancel', onDragUp);
+  view.addEventListener('pointerdown', onDragDown); window.addEventListener('pointermove', onDragMove, { passive: true }); window.addEventListener('pointerup', onDragUp); window.addEventListener('pointercancel', onDragUp);
   let titleTimer = 0;
   const showTitle = (k) => {
     if (!titleEl) return;
@@ -270,7 +287,7 @@ export function mountPavilion(container, userOpts = {}) {
   // ---------------------------------------------------------------- loading
   const texLoader = new THREE.TextureLoader();
   const loadTex = (name, { srgb = false, wrap = false, flipY = false } = {}) => new Promise((res, rej) => {
-    texLoader.load(texDir + name + '.webp', (t) => {
+    texLoader.load(R(texDir + name + '.webp'), (t) => {
       t.flipY = flipY; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
       t.wrapS = t.wrapT = wrap ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
       t.anisotropy = Math.min(hi ? 8 : 4, renderer.capabilities.getMaxAnisotropy());
@@ -297,8 +314,8 @@ export function mountPavilion(container, userOpts = {}) {
     const screenNames = Array.from({ length: opts.stages }, (_, k) => (opts.screens && opts.screens[k]) || 'screen_wedding');
     const uniqueScreens = [...new Set(screenNames)];
     const [gltf, gltfRest, tex, screenTex] = await Promise.all([
-      new Promise((res, rej) => new GLTFLoader().load(assets + 'stage0.glb', res, undefined, rej)),
-      opts.stages > 1 ? new Promise((res, rej) => new GLTFLoader().load(assets + 'stages_rest.glb', res, undefined, rej)) : Promise.resolve(null),
+      new Promise((res, rej) => new GLTFLoader().load(R(assets + 'stage0.glb'), res, undefined, rej)),
+      opts.stages > 1 ? new Promise((res, rej) => new GLTFLoader().load(R(assets + 'stages_rest.glb'), res, undefined, rej)) : Promise.resolve(null),
       (async () => {
         const [floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, archL_studio, archR_studio] = await Promise.all([
           loadTex('floor_irr'), loadTex('floor_alb', { srgb: true }), loadTex('floor_detail', { wrap: true }), loadTex('floor_rough', { wrap: true }), loadTex('floor_normal', { wrap: true }),
@@ -464,7 +481,7 @@ export function mountPavilion(container, userOpts = {}) {
         if (detach.state === 'to-in' || detach.state === 'to-out') {
           detach.t += Math.min(dtRaw, 0.1); const u = Math.min(1, detach.t / detach.dur);
           detach.k = detach.state === 'to-in' ? u : 1 - u;
-          if (u >= 1) { detach.state = detach.state === 'to-in' ? 'in' : 'out'; if (detach.state === 'out') { scene.attach(fig.pivot); fig.pivot.position.copy(fig.home); fig.pivot.rotation.set(0, 0, 0); shadow.visible = false; whitePlane.visible = false; detach.drag = 0; detach.dragV = 0; opts.onAttach && opts.onAttach(api); } else { opts.onDetach && opts.onDetach(api); } updateFigBtn(); }
+          if (u >= 1) { detach.state = detach.state === 'to-in' ? 'in' : 'out'; if (detach.state === 'out') { scene.attach(fig.pivot); fig.pivot.position.copy(fig.home); fig.pivot.rotation.set(0, 0, 0); fig.pivot.scale.setScalar(1); shadow.visible = false; whitePlane.visible = false; detach.drag = 0; detach.dragV = 0; opts.onAttach && opts.onAttach(api); } else { opts.onDetach && opts.onDetach(api); } updateFigBtn(); }
         }
         const k = detach.k;
         const ease = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;          // in-out cubic
@@ -474,13 +491,15 @@ export function mountPavilion(container, userOpts = {}) {
         composer.passes[0].enabled = !full; bloom.enabled = !full; whitePass.clear = full;
         // landing pose: in front of the camera, a touch below eye level so we look slightly down onto it
         const sy = Math.sin(yaw.cur), cy = Math.cos(yaw.cur);
-        const land = new THREE.Vector3(camBase.x + sy * 11.6, 2.75, camBase.z - cy * 11.6);
+        const landScale = 0.3;
+        const land = new THREE.Vector3(camBase.x + sy * 8.0, 2.55, camBase.z - cy * 8.0);
         fig.pivot.position.lerpVectors(fig.home, land, ease);
+        const sc = THREE.MathUtils.lerp(1, landScale, ease); fig.pivot.scale.setScalar(sc);
         fig.pivot.position.y += Math.sin(Math.PI * k) * 1.2;                                  // small lift on the way
         if (!detach.dragging) { detach.dragV *= Math.pow(0.02, Math.min(dtRaw, 0.1)); detach.drag += detach.dragV; }
         fig.pivot.rotation.y = yaw.cur + ease * Math.PI * 2 + detach.drag * k;
         for (const m of fig.mats) m.uniforms.mixAmt.value = THREE.MathUtils.smoothstep(k, 0.3, 0.85);
-        shadow.visible = k > 0.5; shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height / 2 - 0.01 + Math.sin(Math.PI * k) * 0.0, fig.pivot.position.z);
+        shadow.visible = k > 0.5; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
         shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = THREE.MathUtils.smoothstep(k, 0.55, 1.0) * 0.9;
         const dark = k > 0.5;
         if (titleEl) titleEl.style.color = dark ? 'rgba(64, 48, 36, 0.92)' : 'rgba(255, 241, 228, 0.94)';
@@ -537,7 +556,7 @@ export function mountPavilion(container, userOpts = {}) {
       container.removeEventListener('pointermove', onMove); container.removeEventListener('pointerleave', onLeave); window.removeEventListener('deviceorientation', onGyro);
       scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
       for (const m of Object.values(mats).flat()) { for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose(); m.dispose(); }
-      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove(); if (titleEl) titleEl.remove(); if (veil) veil.remove(); if (figBtn) figBtn.remove(); view.removeEventListener('pointerdown', onDragDown); view.removeEventListener('pointermove', onDragMove); view.removeEventListener('pointerup', onDragUp);
+      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove(); if (titleEl) titleEl.remove(); if (veil) veil.remove(); if (figBtn) figBtn.remove(); view.removeEventListener('pointerdown', onDragDown); window.removeEventListener('pointermove', onDragMove); window.removeEventListener('pointerup', onDragUp); window.removeEventListener('pointercancel', onDragUp);
     },
   };
   return api;
@@ -545,9 +564,20 @@ export function mountPavilion(container, userOpts = {}) {
 
 // auto-mount for script-tag usage
 if (typeof document !== 'undefined') {
-  const auto = () => document.querySelectorAll('[data-pavilion]').forEach((el) => {
+  const auto = () => {
+    const heroEl = document.querySelector('[data-hero-video][data-preload]');
+    const pavEl = document.querySelector('[data-pavilion]');
+    if (heroEl || (pavEl && pavEl.dataset.preload)) {
+      // preloader path: fetch everything first, then mount hero + pavilion from memory
+      if (heroEl) heroEl.__hero = heroEl.__hero || {};   // claim so the plain hero auto-mount skips it
+      if (pavEl) pavEl.__pavilion = pavEl.__pavilion || {};
+      runPreloader({ heroEl, pavEl, mountPavilion, pavilionAssetList, label: (heroEl || pavEl).dataset.preloadLabel || '' });
+      return;
+    }
+    document.querySelectorAll('[data-pavilion]').forEach((el) => {
     if (el.__pavilion) return;
     el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null, titles: el.dataset.titles ? el.dataset.titles.split('|').map((x) => x.trim()) : null, titleFont: el.dataset.titleFont || null, awaitEnter: el.dataset.awaitEnter === 'true', figureButton: el.dataset.figureButton !== undefined ? (el.dataset.figureButton || null) : DEFAULTS.figureButton, figureBack: el.dataset.figureBack || DEFAULTS.figureBack });
-  });
+    });
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }
