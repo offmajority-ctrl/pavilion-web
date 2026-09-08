@@ -15,6 +15,7 @@ const DEFAULTS = {
   tier: 'auto',             // 'hi' (1080p) | 'lo' (720p) | 'auto'
   mode: 'overlay',          // 'overlay': fixed over the page, fades away into the section below; 'section': stays in flow and scrolls to `next`
   fadeMs: 1400,
+  lead: 1.0,                // seconds before the outro ends at which the dissolve into the next section starts (overlaps the white-out)
   onHold: null, onContinue: null, onDone: null,
 };
 
@@ -81,7 +82,8 @@ export function mountHero(container, userOpts = {}) {
     catch (e) { intro.style.opacity = '0'; showCta(); state.phase = 'blocked'; }   // autoplay refused: hold on the poster, CTA starts everything
   };
   intro.addEventListener('ended', () => { intro.pause(); showCta(); });
-  outro.addEventListener('ended', () => {
+  const finish = () => {
+    if (state.phase === 'done') return;
     state.phase = 'done'; opts.onDone && opts.onDone(api);
     const target = opts.next ? document.querySelector(opts.next) : null;
     if (overlay) {
@@ -94,13 +96,21 @@ export function mountHero(container, userOpts = {}) {
       setTimeout(() => { container.style.display = 'none'; intro.pause(); outro.pause(); }, opts.fadeMs + 50);
     } else if (target) setTimeout(() => window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top, behavior: 'smooth' }), opts.scrollDelay);
     container.dispatchEvent(new CustomEvent('hero:done'));
-  });
+  };
+  outro.addEventListener('ended', finish);
+  // start the dissolve `lead` seconds before the end so the hand-off happens inside the white-out, not after a visible stop
+  const watchOutro = () => {
+    if (state.phase !== 'outro') return;
+    if (outro.duration && outro.currentTime >= outro.duration - opts.lead) { finish(); return; }
+    requestAnimationFrame(watchOutro);
+  };
   const continueVideo = async () => {
     if (state.phase === 'blocked') { hideCta(); intro.style.opacity = '1'; try { await intro.play(); state.phase = 'intro'; } catch (e) {} return; }
     if (state.phase !== 'hold') return;
     hideCta(); state.phase = 'outro'; opts.onContinue && opts.onContinue(api);
     outro.style.opacity = '1';
     try { await outro.play(); } catch (e) {}
+    requestAnimationFrame(watchOutro);
     setTimeout(() => { intro.style.opacity = '0'; }, 250);
   };
   cta.addEventListener('click', continueVideo);
@@ -124,7 +134,7 @@ export function mountHero(container, userOpts = {}) {
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-hero-video]').forEach((el) => {
     if (el.__hero) return;
-    el.__hero = mountHero(el, { assetsUrl: el.dataset.assets || './assets/video/', cta: el.dataset.cta || DEFAULTS.cta, next: el.dataset.next || null, tier: el.dataset.tier || 'auto', font: el.dataset.font || null, mode: el.dataset.mode || 'overlay' });
+    el.__hero = mountHero(el, { assetsUrl: el.dataset.assets || './assets/video/', cta: el.dataset.cta || DEFAULTS.cta, next: el.dataset.next || null, tier: el.dataset.tier || 'auto', font: el.dataset.font || null, mode: el.dataset.mode || 'overlay', lead: el.dataset.lead != null ? parseFloat(el.dataset.lead) : DEFAULTS.lead });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }
