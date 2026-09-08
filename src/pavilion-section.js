@@ -58,8 +58,8 @@ export function pavilionAssetList(el) {
   const t = tier === 'hi' ? 'hi/' : 'lo/';
   const stages = el.dataset.stages ? parseInt(el.dataset.stages, 10) : 4;
   const screens = [...new Set((el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : []).concat(['screen_wedding']))];
-  const tex = ['floor_irr', 'floor_alb', 'floor_detail', 'floor_rough', 'floor_normal', 'wall_rad', 'ceil_rad', 'archL_rad', 'archR_rad', 'archL_studio', 'archR_studio', ...screens];
-  const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb'] : []), 'poster.jpg', 'fonts/NotoSerifDisplay-Thin.woff2', ...tex.map((n) => t + n + '.webp')];
+  const tex = ['floor_irr', 'floor_alb', 'floor_detail', 'floor_rough', 'floor_normal', 'wall_rad', 'ceil_rad', 'archL_rad', 'archR_rad', 'archL_studio', 'archR_studio', ...(stages > 1 ? ['archC_rad', 'archC_studio'] : []), ...screens];
+  const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb', 'corp_arch.glb'] : []), 'poster.jpg', 'fonts/NotoSerifDisplay-Thin.woff2', ...tex.map((n) => t + n + '.webp')];
   return { base, files };
 }
 export function detectTier(renderer) {
@@ -220,7 +220,8 @@ export function mountPavilion(container, userOpts = {}) {
   const detach = { state: 'out', t: 0, dur: 2.6, k: 0, dir: 1, drag: 0, dragV: 0, dragging: false, lastX: 0 };
   const updateFigBtn = () => {
     if (!figBtn) return;
-    const has = !!figures[yaw.stage] && state.ready;
+    const seg = yaw.cur / (Math.PI / 2); const atHome = Math.abs(seg - Math.round(seg)) < 0.03;
+    const has = !!figures[yaw.stage] && state.ready && (atHome || detach.state !== 'out');
     const busy = detach.state === 'to-in' || detach.state === 'to-out';
     figBtn.classList.toggle('on', has && !busy);
     figBtn.firstChild.textContent = detach.state === 'in' ? opts.figureBack : opts.figureButton;
@@ -313,23 +314,26 @@ export function mountPavilion(container, userOpts = {}) {
   const load = async () => {
     const screenNames = Array.from({ length: opts.stages }, (_, k) => (opts.screens && opts.screens[k]) || 'screen_wedding');
     const uniqueScreens = [...new Set(screenNames)];
-    const [gltf, gltfRest, tex, screenTex] = await Promise.all([
+    const [gltf, gltfRest, gltfCorp, tex, screenTex] = await Promise.all([
       new Promise((res, rej) => new GLTFLoader().load(R(assets + 'stage0.glb'), res, undefined, rej)),
       opts.stages > 1 ? new Promise((res, rej) => new GLTFLoader().load(R(assets + 'stages_rest.glb'), res, undefined, rej)) : Promise.resolve(null),
+      opts.stages > 1 ? new Promise((res, rej) => new GLTFLoader().load(R(assets + 'corp_arch.glb'), res, undefined, rej)) : Promise.resolve(null),
       (async () => {
-        const [floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, archL_studio, archR_studio] = await Promise.all([
+        const [floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, archL_studio, archR_studio, archC_rad, archC_studio] = await Promise.all([
           loadTex('floor_irr'), loadTex('floor_alb', { srgb: true }), loadTex('floor_detail', { wrap: true }), loadTex('floor_rough', { wrap: true }), loadTex('floor_normal', { wrap: true }),
           loadTex('wall_rad'), loadTex('ceil_rad'), loadTex('archL_rad'), loadTex('archR_rad'), loadTex('archL_studio'), loadTex('archR_studio'),
+          opts.stages > 1 ? loadTex('archC_rad') : Promise.resolve(null), opts.stages > 1 ? loadTex('archC_studio') : Promise.resolve(null),
         ]);
-        return { floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, archL_studio, archR_studio };
+        return { floor_irr, floor_alb, floor_detail, floor_rough, floor_normal, wall_rad, ceil_rad, archL_rad, archR_rad, archL_studio, archR_studio, archC_rad, archC_studio };
       })(),
       Promise.all(uniqueScreens.map((n) => loadTex(n, { srgb: true }))).then((list) => Object.fromEntries(uniqueScreens.map((n, i) => [n, list[i]]))),
     ]);
     if (state.disposed) return;
 
 
-    const baked = (map, map2) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, map2: { value: map2 || map }, mixAmt: { value: 0 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(6) } }, vertexShader: S.bakedVert, fragmentShader: S.bakedFrag, toneMapped: true });
-    mats.wall = baked(tex.wall_rad); mats.ceil = baked(tex.ceil_rad); mats.archL = baked(tex.archL_rad, tex.archL_studio); mats.archR = baked(tex.archR_rad, tex.archR_studio);
+    const baked = (map, map2, figure = false) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, map2: { value: map2 || map }, mixAmt: { value: 0 }, fade: { value: 1 }, exposure: { value: opts.exposure }, logNorm: { value: S.logNorm(6) } }, vertexShader: S.bakedVert, fragmentShader: S.bakedFrag, toneMapped: true, transparent: figure, depthWrite: true });
+    mats.wall = baked(tex.wall_rad); mats.ceil = baked(tex.ceil_rad); mats.archL = baked(tex.archL_rad, tex.archL_studio, true); mats.archR = baked(tex.archR_rad, tex.archR_studio, true);
+    if (tex.archC_rad) mats.archC = baked(tex.archC_rad, tex.archC_studio, true);
     const screenMat = (map) => new THREE.ShaderMaterial({ uniforms: { map: { value: map }, intensity: { value: 1.0 * opts.exposure }, dim: { value: 0 } }, vertexShader: S.bakedVert, fragmentShader: S.screenFrag, toneMapped: true });
     mats.screens = screenNames.map((n) => screenMat(screenTex[n]));
     mats.screen = mats.screens[0];
@@ -363,7 +367,15 @@ export function mountPavilion(container, userOpts = {}) {
     if (objects.Arch_0_left && objects.Arch_0_right) {
       const pivot = new THREE.Group(); pivot.name = 'Figure_0'; pivot.position.set(0, 2.54, -16.8); scene.add(pivot);
       pivot.attach(objects.Arch_0_left); pivot.attach(objects.Arch_0_right);
-      figures[0] = { pivot, home: pivot.position.clone(), mats: [mats.archL, mats.archR], height: 5.08, halfW: 2.85 };
+      figures[0] = { pivot, home: pivot.position.clone(), homeRot: 0, mats: [mats.archL, mats.archR], height: 5.08, halfW: 2.85, meshes: [objects.Arch_0_left, objects.Arch_0_right] };
+    }
+    // stage 1 figure: the corporate arch (baked at its spot at +X, front turned to the room centre)
+    if (gltfCorp && mats.archC) {
+      const meshes = []; gltfCorp.scene.traverse((o) => { if (o.isMesh) { o.material = mats.archC; o.frustumCulled = false; meshes.push(o); objects.CorpArch = o; } });
+      const pivot = new THREE.Group(); pivot.name = 'Figure_1';
+      gltfCorp.scene.position.y -= 2.54;                     // GLB origin is the base; the pivot sits at the object's centre like figure 0
+      pivot.add(gltfCorp.scene); pivot.position.set(16.8, 2.54, 0); pivot.rotation.y = -Math.PI / 2; scene.add(pivot);   // fronts face the room centre: rot = -yaw of the stage
+      figures[1] = { pivot, home: pivot.position.clone(), homeRot: -Math.PI / 2, mats: [mats.archC], height: 5.08, halfW: 3.5, meshes };
     }
     // white-out plane riding with the camera + soft shadow for the detached figure
     whiteMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(10, 10, 10), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: true });
@@ -474,6 +486,33 @@ export function mountPavilion(container, userOpts = {}) {
       if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; camera.updateProjectionMatrix(); }
       if (titleEl && k < 0.7) titleEl.style.opacity = '0'; else if (titleEl && k >= 0.7 && titleEl.textContent) titleEl.style.opacity = '1';
     } else if (renderer.toneMappingExposure !== 1.0 && !state.enter) { renderer.toneMappingExposure = 1.0; if (camera.fov !== state.baseFov) { camera.fov = state.baseFov; camera.updateProjectionMatrix(); } }
+    // scroll carries the figure to the next stage and transforms it on the way (edge-on hand-off at 3/4 of a full turn)
+    if (detach.state === 'out') {
+      const seg = yaw.cur / (Math.PI / 2); const a = Math.floor(seg + 1e-4); const p = THREE.MathUtils.clamp(seg - a, 0, 1);
+      const A = figures[a], B = figures[a + 1];
+      const transit = A && B && p > 1e-3 && p < 1 - 1e-3;
+      for (const k in figures) {
+        const f = figures[k];
+        if (transit && (f === A || f === B)) continue;
+        f.pivot.position.copy(f.home); f.pivot.rotation.set(0, f.homeRot, 0); f.pivot.scale.setScalar(1); f.pivot.visible = true;
+        for (const m of f.mats) { m.uniforms.fade.value = 1; m.uniforms.mixAmt.value = 0; }
+      }
+      if (transit) {
+        const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;        // in-out cubic: the turn accelerates through the middle
+        const phi = (a + p) * Math.PI / 2;                                             // room azimuth of the carrier
+        const lift = Math.sin(Math.PI * p);
+        const r = 16.8 - 5.0 * lift, y = 2.54 + 1.7 * lift;
+        const pos = new THREE.Vector3(Math.sin(phi) * r, y, -Math.cos(phi) * r);
+        const rot = -phi + e * Math.PI * 2;                                            // keeps facing the centre (-azimuth) plus one full turn, front to front
+        const fB = THREE.MathUtils.smoothstep(e, 0.68, 0.82);                          // hand-off around 270° (edge-on)
+        const breath = 1 - 0.07 * Math.sin(Math.PI * THREE.MathUtils.clamp((e - 0.6) / 0.3, 0, 1));
+        const lift2 = 0.35 * lift;                                                     // a little studio light so it never goes dull between beams
+        for (const [f, fade] of [[A, 1 - fB], [B, fB]]) {
+          f.pivot.position.copy(pos); f.pivot.rotation.set(0, rot, 0); f.pivot.scale.setScalar(breath); f.pivot.visible = fade > 0.002;
+          for (const m of f.mats) { m.uniforms.fade.value = fade; m.uniforms.mixAmt.value = lift2; }
+        }
+      }
+    }
     // detach / attach flight of the stage figure
     if (detach.state !== 'out') {
       const fig = figures[detach.stage];
@@ -481,7 +520,7 @@ export function mountPavilion(container, userOpts = {}) {
         if (detach.state === 'to-in' || detach.state === 'to-out') {
           detach.t += Math.min(dtRaw, 0.1); const u = Math.min(1, detach.t / detach.dur);
           detach.k = detach.state === 'to-in' ? u : 1 - u;
-          if (u >= 1) { detach.state = detach.state === 'to-in' ? 'in' : 'out'; if (detach.state === 'out') { scene.attach(fig.pivot); fig.pivot.position.copy(fig.home); fig.pivot.rotation.set(0, 0, 0); fig.pivot.scale.setScalar(1); shadow.visible = false; whitePlane.visible = false; detach.drag = 0; detach.dragV = 0; opts.onAttach && opts.onAttach(api); } else { opts.onDetach && opts.onDetach(api); } updateFigBtn(); }
+          if (u >= 1) { detach.state = detach.state === 'to-in' ? 'in' : 'out'; if (detach.state === 'out') { scene.attach(fig.pivot); fig.pivot.position.copy(fig.home); fig.pivot.rotation.set(0, fig.homeRot, 0); fig.pivot.scale.setScalar(1); shadow.visible = false; whitePlane.visible = false; detach.drag = 0; detach.dragV = 0; opts.onAttach && opts.onAttach(api); } else { opts.onDetach && opts.onDetach(api); } updateFigBtn(); }
         }
         const k = detach.k;
         const ease = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;          // in-out cubic
@@ -497,7 +536,7 @@ export function mountPavilion(container, userOpts = {}) {
         const sc = THREE.MathUtils.lerp(1, landScale, ease); fig.pivot.scale.setScalar(sc);
         fig.pivot.position.y += Math.sin(Math.PI * k) * 1.2;                                  // small lift on the way
         if (!detach.dragging) { detach.dragV *= Math.pow(0.02, Math.min(dtRaw, 0.1)); detach.drag += detach.dragV; }
-        fig.pivot.rotation.y = yaw.cur + ease * Math.PI * 2 + detach.drag * k;
+        fig.pivot.rotation.y = -yaw.cur + ease * Math.PI * 2 + detach.drag * k;
         for (const m of fig.mats) m.uniforms.mixAmt.value = THREE.MathUtils.smoothstep(k, 0.3, 0.85);
         shadow.visible = k > 0.5; shadow.scale.setScalar(sc); shadow.position.set(fig.pivot.position.x, fig.pivot.position.y - fig.height * sc / 2 - 0.01, fig.pivot.position.z);
         shadow.rotation.z = fig.pivot.rotation.y; shadow.material.opacity = THREE.MathUtils.smoothstep(k, 0.55, 1.0) * 0.9;
@@ -511,6 +550,7 @@ export function mountPavilion(container, userOpts = {}) {
     composer.render();
     state.frames++;
     readScroll();   // polled every frame too, so throttled or missing scroll events never stall the camera
+    if ((state.frames & 7) === 0) updateFigBtn();
     if (state.frames === 2) { canvas.style.opacity = '1'; poster.style.opacity = '0'; showTitle(yaw.stage); updateFigBtn(); setTimeout(() => { if (!state.disposed) poster.remove(); }, 1000); opts.onReady && opts.onReady(api); }
     opts.onFrame && opts.onFrame(dt, state);
     raf = requestAnimationFrame(loop);

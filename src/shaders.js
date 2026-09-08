@@ -31,13 +31,14 @@ export const bakedFrag = /* glsl */ `
   uniform sampler2D map2;     // alternate lighting (studio) for detached figures
   uniform float mixAmt;
   uniform float exposure;
+  uniform float fade;         // alpha for figure crossfades (1 = opaque)
   varying vec2 vUv;
   varying vec3 vWorld;
   void main() {
     vec3 hdr = decodeLog(texture2D(map, vUv).rgb);
     if (mixAmt > 0.0) hdr = mix(hdr, decodeLog(texture2D(map2, vUv).rgb), mixAmt);
     hdr *= exposure;
-    gl_FragColor = vec4(hdr, 1.0);
+    gl_FragColor = vec4(hdr, fade);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }

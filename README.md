@@ -91,6 +91,17 @@ Clicking it locks scrolling and, over 2.6 s, fades the room to white while the f
 `data-figure-button` / `data-figure-back` set the labels (empty `data-figure-button` hides it); `api.detach()`, `api.attach()`, `api.detached`,
 `onDetach` / `onAttach` hooks. Landing-page content for the white state can be layered over the section (it is plain DOM above the canvas).
 
+### Scroll-carried transformation (stage 1 → 2)
+
+The olive arch (stage 1) and the corporate arch (stage 2, `corp_arch.glb`, 26k tris, baked at its spot with room lighting `archC_rad` and a
+white-studio version `archC_studio`) share one carrier. The carrier is a pure function of the camera yaw, so it is driven by scroll and reverses
+exactly: as the yaw goes from stage 1 to 2 the figure lifts (up to +1.7 m), floats along the room arc toward the camera (radius 16.8 → 11.8 m
+at mid-way) and makes one full turn with an in-out-cubic spin. At 3/4 of the turn — edge-on, the thinnest silhouette — the olive arch crossfades
+into the corporate arch over a narrow window (spin 0.68–0.82) with a 7% scale "breath", so it reads as one object transforming; the corporate arch
+completes the turn and settles front-facing at stage 2. A little studio light is mixed in during the float so it never goes dull between the beams.
+Both figures are lit by their own room bakes when at home, and both get the VIEW/BACK detach. Chaining to stages 3 and 4 only needs their
+objects baked the same way (`figures[k]` with `home`, `homeRot = -k·90°`, room + studio maps).
+
 Programmatic use:
 
 ```js
