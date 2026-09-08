@@ -220,7 +220,7 @@ export function mountPavilion(container, userOpts = {}) {
   const detach = { state: 'out', t: 0, dur: 2.6, k: 0, dir: 1, drag: 0, dragV: 0, dragging: false, lastX: 0 };
   const updateFigBtn = () => {
     if (!figBtn) return;
-    const seg = yaw.cur / (Math.PI / 2); const atHome = Math.abs(seg - Math.round(seg)) < 0.03;
+    const seg = yaw.cur / (Math.PI / 2); const atHome = Math.abs(seg - Math.round(seg)) < 0.03 && Math.abs(carry.q - Math.round(carry.q)) < 0.02;
     const has = !!figures[yaw.stage] && state.ready && (atHome || detach.state !== 'out');
     const busy = detach.state === 'to-in' || detach.state === 'to-out';
     figBtn.classList.toggle('on', has && !busy);
@@ -370,16 +370,16 @@ export function mountPavilion(container, userOpts = {}) {
     // figure pivot (stage 0: the olive arch) so it can lift out of the room as one object
     if (objects.Arch_0_left && objects.Arch_0_right) {
       const pivot = new THREE.Group(); pivot.name = 'Figure_0'; pivot.position.set(0, 2.54, -16.8); scene.add(pivot);
-      pivot.attach(objects.Arch_0_left); pivot.attach(objects.Arch_0_right);
-      figures[0] = { pivot, home: pivot.position.clone(), homeRot: 0, mats: [mats.archL, mats.archR], height: 5.08, halfW: 2.85, meshes: [objects.Arch_0_left, objects.Arch_0_right] };
+      const inner = new THREE.Group(); pivot.add(inner); inner.attach(objects.Arch_0_left); inner.attach(objects.Arch_0_right);
+      figures[0] = { pivot, inner, home: pivot.position.clone(), homeRot: 0, mats: [mats.archL, mats.archR], height: 5.08, halfW: 2.85, meshes: [objects.Arch_0_left, objects.Arch_0_right] };
     }
     // stage 1 figure: the corporate arch (baked at its spot at +X, front turned to the room centre)
     if (gltfCorp && mats.archC) {
       const meshes = []; gltfCorp.scene.traverse((o) => { if (o.isMesh) { o.material = mats.archC; o.frustumCulled = false; meshes.push(o); objects.CorpArch = o; } });
       const pivot = new THREE.Group(); pivot.name = 'Figure_1';
       gltfCorp.scene.position.y -= 2.54;                     // GLB origin is the base; the pivot sits at the object's centre like figure 0
-      pivot.add(gltfCorp.scene); pivot.position.set(16.8, 2.54, 0); pivot.rotation.y = -Math.PI / 2; scene.add(pivot);   // fronts face the room centre: rot = -yaw of the stage
-      figures[1] = { pivot, home: pivot.position.clone(), homeRot: -Math.PI / 2, mats: [mats.archC], height: 5.08, halfW: 3.5, meshes };
+      const inner = new THREE.Group(); inner.add(gltfCorp.scene); pivot.add(inner); pivot.position.set(16.8, 2.54, 0); pivot.rotation.y = -Math.PI / 2; scene.add(pivot);   // fronts face the room centre: rot = -yaw of the stage
+      figures[1] = { pivot, inner, home: pivot.position.clone(), homeRot: -Math.PI / 2, mats: [mats.archC], height: 5.08, halfW: 3.5, meshes };
     }
     // white-out plane riding with the camera + soft shadow for the detached figure
     whiteMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(10, 10, 10), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: true });
@@ -443,6 +443,7 @@ export function mountPavilion(container, userOpts = {}) {
 
   // ---------------------------------------------------------------- scroll-driven yaw (stage k sits at yaw k * 90°)
   const yaw = { target: 0, cur: 0, stage: 0 };
+  const carry = { q: 0, v: 0 };   // the figure's own clock: a critically-damped spring trailing the camera (in stage units)
   const readScroll = () => {
     if (!opts.scroll) return;
     const r = container.getBoundingClientRect();
@@ -490,36 +491,41 @@ export function mountPavilion(container, userOpts = {}) {
       if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; camera.updateProjectionMatrix(); }
       if (titleEl && k < 0.7) titleEl.style.opacity = '0'; else if (titleEl && k >= 0.7 && titleEl.textContent) titleEl.style.opacity = '1';
     } else if (renderer.toneMappingExposure !== 1.0 && !state.enter) { renderer.toneMappingExposure = 1.0; if (camera.fov !== state.baseFov) { camera.fov = state.baseFov; camera.updateProjectionMatrix(); } }
-    // scroll carries the figure to the next stage and transforms it on the way (edge-on hand-off at 3/4 of a full turn)
+    // scroll carries the figure to the next stage and transforms it on the way.
+    // The camera arrives first; the figure follows on its own heavier spring (~2 s), turns 180° with a sine ease and
+    // dissolves into the next object through the middle third of the turn. The beam waits for the landing.
     if (detach.state === 'out') {
-      const seg = yaw.cur / (Math.PI / 2); const a = Math.floor(seg + 1e-4); const p = THREE.MathUtils.clamp(seg - a, 0, 1);
+      const segCam = yaw.cur / (Math.PI / 2);
+      if (carry.lock == null) { const w = 2.4, h = Math.min(dtRaw, 0.05); const acc = (segCam - carry.q) * w * w - 2 * w * carry.v; carry.v += acc * h; carry.q += carry.v * h; } else { carry.q = carry.lock; carry.v = 0; }
+      if (carry.lock == null && Math.abs(carry.q - segCam) < 1e-4 && Math.abs(carry.v) < 1e-4) { carry.q = segCam; carry.v = 0; }
+      const seg = carry.q; const a = Math.max(0, Math.floor(seg + 1e-4)); const p = THREE.MathUtils.clamp(seg - a, 0, 1);
       const A = figures[a], B = figures[a + 1];
       const transit = A && B && p > 1e-3 && p < 1 - 1e-3;
-      // the beam over a stage belongs to its figure: it goes out as the figure lifts and comes on once it has landed
+      // the beam over a stage belongs to its figure: out as it lifts, back once it has landed
       for (const k in beamMats) {
         const ki = +k; let on = 1;
-        if (A && B) { if (ki === a) on = 1 - THREE.MathUtils.smoothstep(p, 0.0, 0.14); else if (ki === a + 1) on = THREE.MathUtils.smoothstep(p, 0.86, 1.0); }
-        const b = beamMats[k]; b.on += (on - b.on) * (1 - Math.exp(-Math.min(dtRaw, 0.1) * 6));
+        if (A && B) { if (ki === a) on = 1 - THREE.MathUtils.smoothstep(p, 0.0, 0.08); else if (ki === a + 1) on = THREE.MathUtils.smoothstep(p, 0.93, 0.995); }
+        const b = beamMats[k]; b.on += (on - b.on) * (1 - Math.exp(-Math.min(dtRaw, 0.1) * 3.2));
         if (mats.floor) mats.floor.uniforms.poolOn.value.setComponent(ki, b.on);
       }
       for (const k in figures) {
         const f = figures[k];
         if (transit && (f === A || f === B)) continue;
-        f.pivot.position.copy(f.home); f.pivot.rotation.set(0, f.homeRot, 0); f.pivot.scale.setScalar(1); f.pivot.visible = true;
+        f.pivot.position.copy(f.home); f.pivot.rotation.set(0, f.homeRot, 0); f.pivot.scale.setScalar(1); f.pivot.visible = true; f.inner.rotation.y = 0;
         for (const m of f.mats) { m.uniforms.fade.value = 1; m.uniforms.mixAmt.value = 0; }
       }
       if (transit) {
-        const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;        // in-out cubic: the turn accelerates through the middle
+        const e = 0.5 - 0.5 * Math.cos(Math.PI * p);                                   // sine in-out
         const phi = (a + p) * Math.PI / 2;                                             // room azimuth of the carrier
         const lift = Math.sin(Math.PI * p);
-        const r = 16.8 - 5.0 * lift, y = 2.54 + 1.7 * lift;
+        const r = 16.8 - 4.5 * lift, y = 2.54 + 1.4 * lift;
         const pos = new THREE.Vector3(Math.sin(phi) * r, y, -Math.cos(phi) * r);
-        const rot = -phi + e * Math.PI * 2;                                            // keeps facing the centre (-azimuth) plus one full turn, front to front
-        const fB = THREE.MathUtils.smoothstep(e, 0.68, 0.82);                          // hand-off around 270° (edge-on)
-        const breath = 1 - 0.07 * Math.sin(Math.PI * THREE.MathUtils.clamp((e - 0.6) / 0.3, 0, 1));
-        const lift2 = 0.35 * lift;                                                     // a little studio light so it never goes dull between beams
-        for (const [f, fade] of [[A, 1 - fB], [B, fB]]) {
-          f.pivot.position.copy(pos); f.pivot.rotation.set(0, rot, 0); f.pivot.scale.setScalar(breath); f.pivot.visible = fade > 0.002;
+        const rot = -phi + e * Math.PI;                                                // half a turn; the arriving object is mounted back-to-front so it ends facing the room
+        const fB = THREE.MathUtils.smoothstep(e, 0.55, 0.85);                          // dissolve while the old one turns away and the new one swings in showing its front
+        const breath = 1 - 0.05 * Math.sin(Math.PI * THREE.MathUtils.clamp((e - 0.5) / 0.4, 0, 1));
+        const lift2 = 0.35 * lift;
+        for (const [f, fade, off] of [[A, 1 - fB, 0], [B, fB, Math.PI]]) {
+          f.pivot.position.copy(pos); f.pivot.rotation.set(0, rot, 0); f.pivot.scale.setScalar(breath); f.pivot.visible = fade > 0.002; f.inner.rotation.y = off;
           for (const m of f.mats) { m.uniforms.fade.value = fade; m.uniforms.mixAmt.value = lift2; }
         }
       }
@@ -581,10 +587,10 @@ export function mountPavilion(container, userOpts = {}) {
     get ready() { return state.ready; }, get tier() { return state.tier; }, scene, camera, renderer, materials: mats, objects, enableGyro,
     setScreenDim(v) { for (const m of (mats.screens || [])) m.uniforms.dim.value = v; },
     get stage() { return yaw.stage; }, get yaw() { return { ...yaw }; },
-    get detached() { return detach.state === 'in'; }, 
+    get detached() { return detach.state === 'in'; }, _carry(q) { carry.lock = q; }, 
     detach() {
       if (detach.state !== 'out' || !figures[yaw.stage] || !state.ready) return false;
-      detach.state = 'to-in'; detach.stage = yaw.stage; detach.t = 0; detach.k = 0; detach.drag = 0; detach.dragV = 0;
+      detach.state = 'to-in'; detach.stage = yaw.stage; detach.t = 0; detach.k = 0; detach.drag = 0; detach.dragV = 0; figures[yaw.stage].inner.rotation.y = 0;
       if (opts.scroll) document.documentElement.style.overflow = 'hidden';
       updateFigBtn(); if (state.visible) start(); return true;
     },
