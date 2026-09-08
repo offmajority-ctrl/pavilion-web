@@ -55,7 +55,7 @@ scrolling up. `data-snap` snaps the scroll to stages (`true` = mandatory, the pa
 ### Header
 
 `data-titles="WEDDINGS & ENGAGEMENTS|DINNERS|CELEBRATIONS|CONCEPT"` (pipe-separated, one per stage) renders a tracked uppercase
-header in Noto Serif Display Thin (`assets/fonts/`, 20 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
+header in Perpetua Titling MT Light (`assets/fonts/`, 14 KB woff2) over the viewport; it crossfades when the stage changes. `data-title-font` overrides the font URL.
 
 ### Preloader (0–100)
 

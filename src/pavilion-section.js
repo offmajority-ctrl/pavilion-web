@@ -33,8 +33,8 @@ const DEFAULTS = {
   screens: null,           // per-stage screen texture names, e.g. ['screen_wedding', 'screen_dinner', ...]
   onStage: null,           // called with the nearest stage index when it changes
   titles: null,            // per-stage header text, e.g. ['WEDDINGS & ENGAGEMENTS', 'DINNERS', ...]
-  titleFont: null,         // woff2 url (defaults to assets/fonts/NotoSerifDisplay-Thin.woff2)
-  titleFamily: 'Noto Serif Display Thin',
+  titleFont: null,         // woff2 url (defaults to assets/fonts/PerpetuaTitlingMT-Light.woff2)
+  titleFamily: 'Perpetua Titling MT Light',
   awaitEnter: false,
   figureButton: 'VIEW',    // label of the detach button (null hides it)
   figureBack: 'BACK',
@@ -59,7 +59,7 @@ export function pavilionAssetList(el) {
   const stages = el.dataset.stages ? parseInt(el.dataset.stages, 10) : 4;
   const screens = [...new Set((el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : []).concat(['screen_wedding']))];
   const tex = ['floor_irr', 'floor_alb', 'floor_detail', 'floor_rough', 'floor_normal', 'wall_rad', 'ceil_rad', 'archL_rad', 'archR_rad', 'archL_studio', 'archR_studio', ...(stages > 1 ? ['archC_rad', 'archC_studio'] : []), ...screens];
-  const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb', 'corp_arch.glb'] : []), 'poster.jpg', 'fonts/NotoSerifDisplay-Thin.woff2', ...tex.map((n) => t + n + '.webp')];
+  const files = ['stage0.glb', ...(stages > 1 ? ['stages_rest.glb', 'corp_arch.glb'] : []), 'poster.jpg', 'fonts/PerpetuaTitlingMT-Light.woff2', ...tex.map((n) => t + n + '.webp')];
   return { base, files };
 }
 export function detectTier(renderer) {
@@ -187,16 +187,16 @@ export function mountPavilion(container, userOpts = {}) {
   // ---------------------------------------------------------------- header overlay (DOM text over the canvas, crisp at any DPR)
   let titleEl = null;
   if (opts.titles && opts.titles.length) {
-    const fontUrl = R(opts.titleFont || (assets + 'fonts/NotoSerifDisplay-Thin.woff2'));
+    const fontUrl = R(opts.titleFont || (assets + 'fonts/PerpetuaTitlingMT-Light.woff2'));
     if (!document.getElementById('pavilion-font')) {
       const st = document.createElement('style'); st.id = 'pavilion-font';
-      st.textContent = `@font-face{font-family:'${opts.titleFamily}';src:url('${fontUrl}') format('woff2');font-weight:100;font-style:normal;font-display:swap;}`;
+      st.textContent = `@font-face{font-family:'${opts.titleFamily}';src:url('${fontUrl}') format('woff2');font-weight:300;font-style:normal;font-display:swap;}`;
       document.head.appendChild(st);
     }
     titleEl = document.createElement('h2');
     Object.assign(titleEl.style, {
       position: 'absolute', left: '50%', top: '11%', transform: 'translateX(-50%)', margin: '0', padding: '0 6vw', width: 'max-content', maxWidth: '100%', boxSizing: 'border-box',
-      fontFamily: `'${opts.titleFamily}', 'Noto Serif Display', Georgia, serif`, fontWeight: '100', fontSize: 'clamp(14.5px, 1.9vw, 29px)', letterSpacing: '0.2em', textIndent: '0.2em', textTransform: 'uppercase',
+      fontFamily: `'${opts.titleFamily}', 'Perpetua Titling MT', 'Perpetua', Georgia, serif`, fontWeight: '300', fontSize: 'clamp(14.5px, 1.9vw, 29px)', letterSpacing: '0.2em', textIndent: '0.2em', textTransform: 'uppercase',
       textAlign: 'center', lineHeight: '1.25', color: 'rgba(255, 241, 228, 0.94)', textShadow: '0 1px 18px rgba(40, 20, 10, 0.35)', pointerEvents: 'none', userSelect: 'none',
       opacity: '0', transition: 'opacity 700ms ease', whiteSpace: 'normal',
     });
@@ -208,7 +208,7 @@ export function mountPavilion(container, userOpts = {}) {
   if (opts.figureButton) {
     if (!document.getElementById('pavilion-figbtn-style')) {
       const st = document.createElement('style'); st.id = 'pavilion-figbtn-style';
-      st.textContent = `.pav-figbtn{position:absolute;left:50%;bottom:6.5%;transform:translateX(-50%);background:none;border:0;padding:12px 18px;cursor:pointer;font-family:'${opts.titleFamily}','Noto Serif Display',Georgia,serif;font-weight:100;font-size:clamp(12px,1.05vw,15px);letter-spacing:.3em;text-indent:.3em;text-transform:uppercase;color:rgba(255,241,228,.9);opacity:0;pointer-events:none;transition:opacity 600ms ease,color 900ms ease;-webkit-tap-highlight-color:transparent}
+      st.textContent = `.pav-figbtn{position:absolute;left:50%;bottom:6.5%;transform:translateX(-50%);background:none;border:0;padding:12px 18px;cursor:pointer;font-family:'${opts.titleFamily}','Perpetua Titling MT','Perpetua',Georgia,serif;font-weight:300;font-size:clamp(12px,1.05vw,15px);letter-spacing:.3em;text-indent:.3em;text-transform:uppercase;color:rgba(255,241,228,.9);opacity:0;pointer-events:none;transition:opacity 600ms ease,color 900ms ease;-webkit-tap-highlight-color:transparent}
       .pav-figbtn span{display:block;padding-bottom:6px;border-bottom:1px solid currentColor;transition:letter-spacing 500ms ease}
       .pav-figbtn.on{opacity:.9;pointer-events:auto}.pav-figbtn:hover span{letter-spacing:.38em}.pav-figbtn.dark{color:rgba(64,48,36,.9)}.pav-figbtn:focus-visible{outline:none}`;
       document.head.appendChild(st);

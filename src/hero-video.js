@@ -10,8 +10,8 @@ const DEFAULTS = {
   cta: 'ENTER',
   next: null,               // selector to scroll to when the outro finishes
   scrollDelay: 150,         // ms after the outro ends before scrolling
-  font: null,               // woff2 url for the CTA (defaults to ../fonts/NotoSerifDisplay-Thin.woff2 next to the video folder)
-  fontFamily: 'Noto Serif Display Thin',
+  font: null,               // woff2 url for the CTA (defaults to ../fonts/PerpetuaTitlingMT-Light.woff2 next to the video folder)
+  fontFamily: 'Perpetua Titling MT Light',
   tier: 'auto',             // 'hi' (1080p) | 'lo' (720p) | 'auto'
   mode: 'overlay',          // 'overlay': fixed over the page, fades away into the section below; 'section': stays in flow and scrolls to `next`
   fadeMs: 1400,
@@ -65,16 +65,16 @@ export function mountHero(container, userOpts = {}) {
   const outro = mkVideo('outro');
 
   // ---- CTA
-  const fontUrl = opts.font || (assets.replace(/video\/$/, '') + 'fonts/NotoSerifDisplay-Thin.woff2');
+  const fontUrl = opts.font || (assets.replace(/video\/$/, '') + 'fonts/PerpetuaTitlingMT-Light.woff2');
   if (!document.getElementById('pavilion-font')) {
     const st = document.createElement('style'); st.id = 'pavilion-font';
-    st.textContent = `@font-face{font-family:'${opts.fontFamily}';src:url('${fontUrl}') format('woff2');font-weight:100;font-style:normal;font-display:swap;}`;
+    st.textContent = `@font-face{font-family:'${opts.fontFamily}';src:url('${fontUrl}') format('woff2');font-weight:300;font-style:normal;font-display:swap;}`;
     document.head.appendChild(st);
   }
   if (!document.getElementById('hero-cta-style')) {
     const st = document.createElement('style'); st.id = 'hero-cta-style';
     st.textContent = `
-      .hero-cta{position:absolute;left:50%;bottom:17%;transform:translateX(-50%);display:inline-flex;flex-direction:column;align-items:center;gap:14px;background:none;border:0;padding:16px 28px;cursor:pointer;color:rgba(64,48,36,.92);text-shadow:0 0 14px rgba(255,248,240,.75);font-family:'${opts.fontFamily}','Noto Serif Display',Georgia,serif;font-weight:100;font-size:clamp(14px,1.4vw,20px);letter-spacing:.34em;text-indent:.34em;text-transform:uppercase;opacity:0;transition:opacity 900ms ease,transform 900ms ease;pointer-events:none;-webkit-tap-highlight-color:transparent}
+      .hero-cta{position:absolute;left:50%;bottom:17%;transform:translateX(-50%);display:inline-flex;flex-direction:column;align-items:center;gap:14px;background:none;border:0;padding:16px 28px;cursor:pointer;color:rgba(64,48,36,.92);text-shadow:0 0 14px rgba(255,248,240,.75);font-family:'${opts.fontFamily}','Perpetua Titling MT','Perpetua',Georgia,serif;font-weight:300;font-size:clamp(14px,1.4vw,20px);letter-spacing:.34em;text-indent:.34em;text-transform:uppercase;opacity:0;transition:opacity 900ms ease,transform 900ms ease;pointer-events:none;-webkit-tap-highlight-color:transparent}
       .hero-cta.on{opacity:1;pointer-events:auto}
       .hero-cta .ring{width:58px;height:58px;border:1px solid rgba(64,48,36,.55);border-radius:50%;display:flex;align-items:center;justify-content:center;transition:transform 600ms cubic-bezier(.2,.7,.2,1),border-color 400ms ease;animation:heroPulse 2.8s ease-in-out infinite}
       .hero-cta .ring:after{content:'';width:7px;height:7px;border-right:1px solid rgba(64,48,36,.85);border-bottom:1px solid rgba(64,48,36,.85);transform:translateY(-2px) rotate(45deg)}

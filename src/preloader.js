@@ -6,17 +6,17 @@
  */
 import { mountHero, heroAssetList } from './hero-video.js';
 
-const FONT = 'Noto Serif Display Thin';
+const FONT = 'Perpetua Titling MT Light';
 
 export async function runPreloader({ heroEl, pavEl, mountPavilion, pavilionAssetList, label = '' } = {}) {
   // ---- overlay
   const ov = document.createElement('div');
-  Object.assign(ov.style, { position: 'fixed', inset: '0', zIndex: '200', background: '#ebe3d8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '18px', transition: 'opacity 800ms ease', fontFamily: `'${FONT}', 'Noto Serif Display', Georgia, serif`, color: 'rgba(64,48,36,.92)' });
+  Object.assign(ov.style, { position: 'fixed', inset: '0', zIndex: '200', background: '#ebe3d8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '18px', transition: 'opacity 800ms ease', fontFamily: `'${FONT}', 'Perpetua Titling MT', 'Perpetua', Georgia, serif`, color: 'rgba(64,48,36,.92)' });
   const num = document.createElement('div');
-  Object.assign(num.style, { fontWeight: '100', fontSize: 'clamp(44px, 7vw, 96px)', lineHeight: '1', letterSpacing: '0.04em', fontVariantNumeric: 'tabular-nums' });
+  Object.assign(num.style, { fontWeight: '300', fontSize: 'clamp(44px, 7vw, 96px)', lineHeight: '1', letterSpacing: '0.04em', fontVariantNumeric: 'tabular-nums' });
   num.textContent = '0';
   const sub = document.createElement('div');
-  Object.assign(sub.style, { fontWeight: '100', fontSize: 'clamp(11px, 0.9vw, 13px)', letterSpacing: '0.34em', textIndent: '0.34em', textTransform: 'uppercase', opacity: '0.7' });
+  Object.assign(sub.style, { fontWeight: '300', fontSize: 'clamp(11px, 0.9vw, 13px)', letterSpacing: '0.34em', textIndent: '0.34em', textTransform: 'uppercase', opacity: '0.7' });
   sub.textContent = label;
   ov.appendChild(num); if (label) ov.appendChild(sub);
   document.body.appendChild(ov);
