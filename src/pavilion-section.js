@@ -34,6 +34,7 @@ const DEFAULTS = {
   titles: null,            // per-stage header text, e.g. ['WEDDINGS & ENGAGEMENTS', 'DINNERS', ...]
   titleFont: null,         // woff2 url (defaults to assets/fonts/NotoSerifDisplay-Thin.woff2)
   titleFamily: 'Noto Serif Display Thin',
+  awaitEnter: false,       // start over-exposed and pushed-out; call api.enter() (the hero does this) to dolly into the room
   bloom: 0.25,
   exposure: 1.0,
   maxPixelRatio: 2.0,
@@ -127,7 +128,7 @@ class FloorReflection {
 export function mountPavilion(container, userOpts = {}) {
   const opts = { ...DEFAULTS, ...userOpts };
   const assets = opts.assetsUrl.endsWith('/') ? opts.assetsUrl : opts.assetsUrl + '/';
-  const state = { disposed: false, ready: false, visible: true, running: false, tier: 'hi', frames: 0, t: 0, last: performance.now() };
+  const state = { disposed: false, ready: false, visible: true, running: false, tier: 'hi', frames: 0, t: 0, last: performance.now(), baseFov: 48, enter: opts.awaitEnter ? { t: 0, dur: 0, active: false } : null };
 
   // DOM — in scroll mode the container is the tall track and `view` is a sticky 100vh viewport inside it
   container.style.position ||= 'relative';
@@ -155,6 +156,13 @@ export function mountPavilion(container, userOpts = {}) {
   poster.alt = ''; poster.decoding = 'async'; poster.src = opts.poster || (assets + 'poster.jpg');
   Object.assign(poster.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', transition: 'opacity 900ms ease' });
   view.appendChild(poster); view.appendChild(canvas);
+  // warm-white veil for the entrance: the film ends in white, the room starts under white and clears as the camera settles
+  let veil = null;
+  if (opts.awaitEnter) {
+    veil = document.createElement('div');
+    Object.assign(veil.style, { position: 'absolute', inset: '0', background: '#f4ece2', opacity: '1', pointerEvents: 'none', zIndex: '2' });
+    view.appendChild(veil);
+  }
 
   // ---------------------------------------------------------------- header overlay (DOM text over the canvas, crisp at any DPR)
   let titleEl = null;
@@ -315,7 +323,7 @@ export function mountPavilion(container, userOpts = {}) {
     const t = THREE.MathUtils.clamp((aspect - 0.6) / (1.6 - 0.6), 0, 1);
     const hfov = THREE.MathUtils.lerp(51, 77, t);
     const vfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hfov / 2)) / aspect);
-    camera.fov = THREE.MathUtils.radToDeg(vfov); camera.aspect = aspect; camera.updateProjectionMatrix();
+    state.baseFov = THREE.MathUtils.radToDeg(vfov); camera.fov = state.baseFov; camera.aspect = aspect; camera.updateProjectionMatrix();
     reflection.setSize(w * pixelRatio, h * pixelRatio);
   };
   const ro = new ResizeObserver(resize); ro.observe(view);
@@ -382,6 +390,18 @@ export function mountPavilion(container, userOpts = {}) {
     // beam life
     for (const u of uniformsTime) u.value = state.t;
     if (mats.beamCore) { mats.beamCore.uniforms.boost.value = 1 + Math.sin(state.t * 0.9) * 0.03; mats.beamHaze.uniforms.boost.value = 1 + Math.sin(state.t * 0.6 + 1) * 0.04; }
+    // entrance: from a white, slightly pushed-out view into the room (driven by the hero film's white-out)
+    if (state.enter) {
+      const e = state.enter;
+      let k = 0;
+      if (e.active) { e.t += dtRaw; k = Math.min(1, e.t / e.dur); if (k >= 1) { state.enter = null; } }
+      const kExp = 1 - Math.pow(1 - k, 3), kFov = 1 - Math.pow(1 - k, 2.2);
+      renderer.toneMappingExposure = THREE.MathUtils.lerp(4.0, 1.0, kExp);
+      if (veil) { const kv = Math.min(1, k / 0.6); veil.style.opacity = String(1 - kv * kv); if (k >= 1) { veil.remove(); veil = null; } }
+      const fov = state.baseFov * THREE.MathUtils.lerp(1.16, 1.0, kFov);
+      if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; camera.updateProjectionMatrix(); }
+      if (titleEl && k < 0.7) titleEl.style.opacity = '0'; else if (titleEl && k >= 0.7 && titleEl.textContent) titleEl.style.opacity = '1';
+    } else if (renderer.toneMappingExposure !== 1.0 && !state.enter) { renderer.toneMappingExposure = 1.0; if (camera.fov !== state.baseFov) { camera.fov = state.baseFov; camera.updateProjectionMatrix(); } }
     if (objects.Floor) reflection.render(objects.Floor);
     composer.render();
     state.frames++;
@@ -405,6 +425,7 @@ export function mountPavilion(container, userOpts = {}) {
     get ready() { return state.ready; }, get tier() { return state.tier; }, scene, camera, renderer, materials: mats, objects, enableGyro,
     setScreenDim(v) { for (const m of (mats.screens || [])) m.uniforms.dim.value = v; },
     get stage() { return yaw.stage; }, get yaw() { return { ...yaw }; },
+    enter(duration = 2.6) { if (!state.enter) state.enter = { t: 0, dur: duration, active: true }; else { state.enter.active = true; state.enter.dur = duration; } if (state.visible) start(); },
     goTo(k) {
       k = THREE.MathUtils.clamp(k | 0, 0, opts.stages - 1);
       if (!opts.scroll) { yaw.target = k * Math.PI / 2; yaw.stage = k; showTitle(k); return; }
@@ -417,7 +438,7 @@ export function mountPavilion(container, userOpts = {}) {
       container.removeEventListener('pointermove', onMove); container.removeEventListener('pointerleave', onLeave); window.removeEventListener('deviceorientation', onGyro);
       scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
       for (const m of Object.values(mats).flat()) { for (const u of Object.values(m.uniforms)) if (u.value && u.value.isTexture) u.value.dispose(); m.dispose(); }
-      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove(); if (titleEl) titleEl.remove();
+      reflection.dispose(); composer.dispose(); renderer.dispose(); canvas.remove(); poster.remove(); if (titleEl) titleEl.remove(); if (veil) veil.remove();
     },
   };
   return api;
@@ -427,7 +448,7 @@ export function mountPavilion(container, userOpts = {}) {
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-pavilion]').forEach((el) => {
     if (el.__pavilion) return;
-    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null, titles: el.dataset.titles ? el.dataset.titles.split('|').map((x) => x.trim()) : null, titleFont: el.dataset.titleFont || null });
+    el.__pavilion = mountPavilion(el, { assetsUrl: el.dataset.assets || './assets/', tier: el.dataset.tier || 'auto', poster: el.dataset.poster || null, parallax: el.dataset.parallax != null ? parseFloat(el.dataset.parallax) : 1, bloom: el.dataset.bloom != null ? parseFloat(el.dataset.bloom) : DEFAULTS.bloom, scroll: el.dataset.scroll === 'true', stages: el.dataset.stages ? parseInt(el.dataset.stages, 10) : DEFAULTS.stages, snap: el.dataset.snap !== 'false', trackHeight: el.dataset.trackHeight || null, screens: el.dataset.screens ? el.dataset.screens.split(',').map((x) => x.trim()) : null, titles: el.dataset.titles ? el.dataset.titles.split('|').map((x) => x.trim()) : null, titleFont: el.dataset.titleFont || null, awaitEnter: el.dataset.awaitEnter === 'true' });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }

@@ -13,6 +13,8 @@ const DEFAULTS = {
   font: null,               // woff2 url for the CTA (defaults to ../fonts/NotoSerifDisplay-Thin.woff2 next to the video folder)
   fontFamily: 'Noto Serif Display Thin',
   tier: 'auto',             // 'hi' (1080p) | 'lo' (720p) | 'auto'
+  mode: 'overlay',          // 'overlay': fixed over the page, fades away into the section below; 'section': stays in flow and scrolls to `next`
+  fadeMs: 1400,
   onHold: null, onContinue: null, onDone: null,
 };
 
@@ -24,7 +26,11 @@ export function mountHero(container, userOpts = {}) {
   const q = hi ? '1080' : '720';
   const state = { phase: 'loading', disposed: false };
 
-  container.style.position ||= 'relative';
+  const overlay = opts.mode === 'overlay';
+  if (overlay) {
+    Object.assign(container.style, { position: 'fixed', inset: '0', width: '100%', height: '100vh', zIndex: '60', transition: `opacity ${opts.fadeMs}ms ease` });
+    document.documentElement.style.overflow = 'hidden';   // no scrolling until the film lets you in
+  } else container.style.position ||= 'relative';
   container.style.overflow = 'hidden';
   container.style.backgroundColor ||= '#ebe3d8';
   container.style.backgroundImage = `url('${assets}poster.jpg')`;
@@ -77,10 +83,17 @@ export function mountHero(container, userOpts = {}) {
   intro.addEventListener('ended', () => { intro.pause(); showCta(); });
   outro.addEventListener('ended', () => {
     state.phase = 'done'; opts.onDone && opts.onDone(api);
-    if (opts.next) {
-      const target = document.querySelector(opts.next);
-      if (target) setTimeout(() => window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top, behavior: 'smooth' }), opts.scrollDelay);
-    }
+    const target = opts.next ? document.querySelector(opts.next) : null;
+    if (overlay) {
+      // the film ends in white; the room starts white and pushed-out, and the two cross while the overlay dissolves
+      if (target && target.__pavilion && target.__pavilion.enter) target.__pavilion.enter(2.8);
+      document.documentElement.style.overflow = '';
+      window.scrollTo(0, 0);
+      container.style.opacity = '0';
+      container.style.pointerEvents = 'none';
+      setTimeout(() => { container.style.display = 'none'; intro.pause(); outro.pause(); }, opts.fadeMs + 50);
+    } else if (target) setTimeout(() => window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top, behavior: 'smooth' }), opts.scrollDelay);
+    container.dispatchEvent(new CustomEvent('hero:done'));
   });
   const continueVideo = async () => {
     if (state.phase === 'blocked') { hideCta(); intro.style.opacity = '1'; try { await intro.play(); state.phase = 'intro'; } catch (e) {} return; }
@@ -111,7 +124,7 @@ export function mountHero(container, userOpts = {}) {
 if (typeof document !== 'undefined') {
   const auto = () => document.querySelectorAll('[data-hero-video]').forEach((el) => {
     if (el.__hero) return;
-    el.__hero = mountHero(el, { assetsUrl: el.dataset.assets || './assets/video/', cta: el.dataset.cta || DEFAULTS.cta, next: el.dataset.next || null, tier: el.dataset.tier || 'auto', font: el.dataset.font || null });
+    el.__hero = mountHero(el, { assetsUrl: el.dataset.assets || './assets/video/', cta: el.dataset.cta || DEFAULTS.cta, next: el.dataset.next || null, tier: el.dataset.tier || 'auto', font: el.dataset.font || null, mode: el.dataset.mode || 'overlay' });
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto); else auto();
 }

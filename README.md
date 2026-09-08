@@ -64,8 +64,10 @@ header in Noto Serif Display Thin (`assets/fonts/`, 20 KB woff2) over the viewpo
 ```
 
 The 10 s film is split with ffmpeg at exactly 6.5 s (frame 156 of 241) into `intro` and `outro` clips (H.264 MP4 + VP9 WebM, 1080p and 720p
-tiers, no audio). The intro autoplays muted, holds on its last frame and fades in the CTA; the outro is already buffered and plays on click, then
-the page scrolls smoothly to `data-next`. Autoplay-blocked browsers hold on the poster with the same CTA; reduced-motion users get the hold frame
+tiers, no audio). The intro autoplays muted, holds on its last frame and fades in the CTA; the outro is already buffered and plays on click. By default the hero
+is a fixed overlay (`data-mode="overlay"`, scrolling locked): as the film whites out it dissolves away and the pavilion below — started under a
+warm-white veil, over-exposed and pushed out (`data-await-enter="true"` on the pavilion) — clears and dollies into the room, so ENTER and the
+camera move carry you inside. `data-mode="section"` keeps the old behaviour (hero in the flow, smooth-scroll to `data-next`). Autoplay-blocked browsers hold on the poster with the same CTA; reduced-motion users get the hold frame
 straight away. `api.continue()`, `api.phase` (`loading|intro|hold|outro|done|blocked`), `onHold/onContinue/onDone` hooks.
 
 Re-cut: `ffmpeg -i vieNEW.mp4 -t 6.5 -c:v libx264 -crf 19 -pix_fmt yuv420p -movflags +faststart -an intro_1080.mp4` and
